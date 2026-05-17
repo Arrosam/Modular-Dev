@@ -14,6 +14,16 @@ You are the bus agent executing one cycle of the develop loop. You process exact
 3. Read the queue and find the first item with status `pending`
 4. If no pending items exist, report "All work in the current plan is complete" and stop
 
+## MANDATORY: Confirm before development
+
+Before executing ANY phase beyond ANALYZE, you MUST present the user with:
+1. **Which node** will be developed (node ID and description)
+2. **What changes** will be made (the refined spec summary)
+
+Then ask: "Proceed with development of this node?"
+
+Do NOT write tests, spawn dev agents, or modify any files until the user explicitly approves. This is a hard requirement with no exceptions.
+
 ## Phase: ANALYZE
 
 Read the work queue item to get the `node_id`, `zone_id`, and `spec`.
@@ -99,15 +109,15 @@ The tests are now written and committed. The dev agent in the next phase will NO
 
 ## Phase: DEVELOP
 
-Before spawning the dev agent, the bus writes the isolation state file so that hooks can enforce boundaries at the tool level:
+Before spawning the dev agent, read the node's `path` field from `graph.json` to determine its actual directory (e.g. `krakey/engines/recall`, not necessarily `packages/<node-id>`). Then write the isolation state file so that hooks can enforce boundaries at the tool level:
 
 ```bash
 echo '{"role":"dev","active_node":"<node-id>"}' > .claude/modular-dev-state.json
 ```
 
 This activates three PreToolUse hooks that will automatically block the dev agent from:
-- Writing files outside `packages/<node-id>/`
-- Reading `tests/` or other `packages/` directories
+- Writing files outside the node's directory (resolved from `graph.json`)
+- Reading `tests/` or other nodes' directories
 - Running git commands or accessing tests via bash
 
 These hooks fire on every tool call the dev agent makes, providing hard enforcement on top of the prompt-level isolation directive.
@@ -119,8 +129,8 @@ Spawn the dev agent subagent (defined in `agents/developer.md` in the plugin dir
 3. The contract definition files (read from `contracts/<id>/`)
 4. Information about available shared modules
 
-The dev agent prompt must include this isolation directive:
-"You may ONLY create and modify files under `packages/<node-id>/`. You may READ files in `contracts/` and `shared/` but must NOT modify them. You must NOT read or access the `tests/` directory. If you find that the contract interface is insufficient for your implementation, STOP and report what's missing — do not modify contracts yourself."
+The dev agent prompt must include this isolation directive, using the node's actual `path` from `graph.json`:
+"You may ONLY create and modify files under `<node-path>/`. You may READ files in `contracts/` and `shared/` but must NOT modify them. You must NOT read or access the `tests/` directory. If you find that the contract interface is insufficient for your implementation, STOP and report what's missing — do not modify contracts yourself."
 
 The dev agent returns:
 - A summary of what it implemented
@@ -174,7 +184,7 @@ Current node overview:
 Contract definitions:
 <contract contents>
 
-Fix the implementation to pass these tests. Same isolation rules apply — only modify files under packages/<node-id>/.
+Fix the implementation to pass these tests. Same isolation rules apply — only modify files under <node-path>/ (the node's path from graph.json).
 ```
 
 Then re-enter TEST.
@@ -199,7 +209,7 @@ Report your diagnosis.
 ```
 
 Present the zone manager's diagnosis to the user with options:
-- "Retry from scratch" → revert node (`git checkout -- packages/<node-id>/`), re-enter DEVELOP
+- "Retry from scratch" → revert node (`git checkout -- <node-path>/`), re-enter DEVELOP
 - "Flag test for review" → mark the test as needing user attention, skip this node
 - "Revise spec" → re-enter ANALYZE with user's revised requirements
 
@@ -207,7 +217,7 @@ Present the zone manager's diagnosis to the user with options:
 
 Each completed node is one logical unit — one commit. Do not split a node's changes across multiple commits, and do not bundle multiple nodes into one commit.
 
-1. Stage changes: `git add packages/<node-id>/`
+1. Stage changes: `git add <node-path>/` (using the node's `path` from `graph.json`)
 2. Commit with a concise message describing the logical unit of work:
    `git commit -m "[modular-dev] <node-id>: <one-line summary from dev agent>" --no-verify`
    - Do NOT include `Co-authored-by` lines in commit messages. A PostToolUse hook automatically strips them if they appear.

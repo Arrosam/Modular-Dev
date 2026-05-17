@@ -81,7 +81,7 @@ From all zone managers' analyses, compile the ordered list of work units:
    - Continue until all work is queued
 3. Within each wave, order alphabetically (deterministic)
 
-Present the plan to the user:
+Present the plan to the user. This is MANDATORY — development cannot begin until the user has seen and approved this:
 
 ```
 Development plan for: <task summary>
@@ -89,15 +89,19 @@ Development plan for: <task summary>
 Contract changes (requires approval):
   <contract-id>: <what changes>
 
-Work queue (sequential):
-  1. [<node-id>] <one-line spec>
-  2. [<node-id>] <one-line spec>
+Nodes to modify:
+  1. [<node-id>] <one-line description of what this node does>
+     Changes: <specific description of what will be modified and why>
+  2. [<node-id>] <one-line description of what this node does>
+     Changes: <specific description of what will be modified and why>
   ...
 
 Estimated units of work: <N>
 
-Proceed with development? (Run /modular-dev:develop to start)
+Proceed with this plan?
 ```
+
+You MUST wait for explicit user approval before any development begins. Do NOT proceed to write tests, spawn dev agents, or modify any files until the user confirms.
 
 Save the work queue to `.claude/modular-dev-queue.json`:
 

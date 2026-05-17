@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # PreToolUse: Block git ops and test access via bash in dev mode
+# Normalizes Windows backslash paths for cross-platform compatibility
 # FAIL-OPEN: any error → allow
 trap 'exit 0' ERR
 
@@ -11,19 +12,22 @@ INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | grep -o '"command"[^}]*' | head -1 | sed 's/^"command"[[:space:]]*:[[:space:]]*"//' | sed 's/"[[:space:]]*$//')
 [ -z "$COMMAND" ] && exit 0
 
+# Normalize backslashes for path matching
+NORM_CMD=$(echo "$COMMAND" | tr '\\' '/')
+
 # Block git write operations in dev mode
-if echo "$COMMAND" | grep -qE '^\s*git\s+(commit|push|checkout|reset|merge|rebase|tag|stash)'; then
+if echo "$NORM_CMD" | grep -qE '^\s*git\s+(commit|push|checkout|reset|merge|rebase|tag|stash)'; then
   echo "[modular-dev] BLOCKED: Dev agent cannot run git operations." >&2
   exit 2
 fi
 
 # Block reading tests/ via shell
-if echo "$COMMAND" | grep -qE '(cat|less|head|tail|more|bat)\s+.*tests/'; then
+if echo "$NORM_CMD" | grep -qE '(cat|less|head|tail|more|bat)\s+.*tests/'; then
   echo "[modular-dev] BLOCKED: Dev agent cannot read test files via shell." >&2
   exit 2
 fi
 
-if echo "$COMMAND" | grep -qE '(ls|find|tree)\s+.*tests(/|$|\s)'; then
+if echo "$NORM_CMD" | grep -qE '(ls|find|tree)\s+.*tests(/|$|\s)'; then
   echo "[modular-dev] BLOCKED: Dev agent cannot browse the tests directory." >&2
   exit 2
 fi

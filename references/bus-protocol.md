@@ -53,7 +53,7 @@ IDLE → ANALYZE → WRITE TESTS → DEVELOP → RUN TESTS → COMMIT → IDLE
 ## Step: COMMIT
 
 On pass:
-1. Stage all changes under `packages/<node-id>/`
+1. Stage all changes under the node's directory (the `path` from `graph.json`)
 2. Commit with message: `[modular-dev] <node-id>: <one-line summary>`
 3. Update the node's status in `graph.json` to `done`
 4. Update the node's overview file with the dev agent's proposed update (after validation)
@@ -70,7 +70,7 @@ On fail (retry > 3 — ESCALATE):
 3. Zone manager returns diagnosis:
    - "test issue" → bus flags the test for user review
    - "spec issue" → bus asks user to clarify the requirement
-   - "dev issue" → bus may prune the node (git checkout -- packages/<node-id>/) and retry from scratch
+   - "dev issue" → bus may prune the node (`git checkout -- <node-path>/` using the path from `graph.json`) and retry from scratch
 
 ## Zone manager generation
 

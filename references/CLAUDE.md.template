@@ -12,12 +12,26 @@ When the user describes any task (feature, bug fix, change), follow this sequenc
 1. **Read state**: Read `graph.json` and `overviews/project.md` to understand the current project structure.
 2. **Regenerate zone managers**: Ensure `.claude/agents/_zone-*.md` files exist and match `graph.json`. If stale or missing, regenerate them using the template in the modular-dev plugin's `references/bus-protocol.md`.
 3. **Analyze**: Spawn the relevant zone manager subagent to analyze which nodes need modification. If cross-zone impact is reported, spawn affected zone managers sequentially. If ambiguity exists, ask the user — do not guess.
-4. **Write tests**: For each node to be modified, spawn the test-writer subagent to write edge tests BEFORE development, based on contract definitions only. Skip if tests already exist and contracts haven't changed. Commit test files.
-5. **Develop**: For each node in BFS order, set the isolation state (`echo '{"role":"dev","active_node":"<node-id>"}' > .claude/modular-dev-state.json`), then spawn the dev subagent. The dev agent can only modify its assigned package. After it returns, the state resets automatically via hooks.
-6. **Run tests**: Spawn the tester subagent to run edge tests for the modified node's contracts.
-7. **Commit or retry**: If tests pass, commit by logical unit (one node = one commit). If tests fail, retry up to 3 times. After 3 failures, spawn the zone manager to diagnose, then escalate to the user.
-8. **Loop**: Move to the next node in the BFS queue. Repeat steps 4-7 until all nodes are done.
-9. **Report**: Summarize what was completed.
+4. **Present plan and wait for approval**: After analysis, you MUST present the following to the user and wait for explicit approval BEFORE proceeding to any development:
+   - **Which components (nodes) will be modified** — list every node by ID
+   - **What changes are expected for each** — a concise description of the planned modifications per node
+   - Ask: "Proceed with this plan?"
+   - Do NOT write tests, spawn dev agents, or modify any files until the user explicitly approves.
+5. **Write tests**: For each node to be modified, spawn the test-writer subagent to write edge tests BEFORE development, based on contract definitions only. Skip if tests already exist and contracts haven't changed. Commit test files.
+6. **Develop**: For each node in BFS order, set the isolation state (`echo '{"role":"dev","active_node":"<node-id>"}' > .claude/modular-dev-state.json`), then spawn the dev subagent. The dev agent can only modify its assigned package. After it returns, the state resets automatically via hooks.
+7. **Run tests**: Spawn the tester subagent to run edge tests for the modified node's contracts.
+8. **Commit or retry**: If tests pass, commit by logical unit (one node = one commit). If tests fail, retry up to 3 times. After 3 failures, spawn the zone manager to diagnose, then escalate to the user.
+9. **Loop**: Move to the next node in the BFS queue. Repeat steps 5-8 until all nodes are done.
+10. **Report**: Summarize what was completed.
+
+## HARD REQUIREMENT: No development without explicit approval
+
+You MUST NOT begin any development work (writing tests, spawning dev agents, modifying code) until you have:
+1. Clearly stated to the user which nodes will be modified
+2. Clearly stated what changes will be made to each node
+3. Received explicit approval from the user to proceed
+
+This applies to ALL workflows — whether triggered by slash commands, natural language tasks, or automatic bus agent behavior. No exceptions.
 
 ## Commit rules
 
@@ -28,9 +42,9 @@ When the user describes any task (feature, bug fix, change), follow this sequenc
 
 ## Isolation rules
 
-- Dev agents may ONLY modify files under their assigned `packages/<node-id>/`
+- Dev agents may ONLY modify files under their assigned node directory (the `path` field in `graph.json` for that node — NOT necessarily `packages/<node-id>/`)
 - Dev agents may READ `contracts/` and `shared/` but NOT modify them
-- Dev agents CANNOT read `tests/` or other `packages/` — hooks enforce this
+- Dev agents CANNOT read `tests/` or other nodes' directories — hooks enforce this
 - Dev agents CANNOT run git commands — hooks enforce this
 - If a dev agent reports that a contract is insufficient, stop and escalate to the user
 
