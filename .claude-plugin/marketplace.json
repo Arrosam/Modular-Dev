@@ -1,0 +1,13 @@
+{
+  "name": "modular-dev",
+  "owner": {
+    "name": "Arrosin"
+  },
+  "plugins": [
+    {
+      "name": "modular-dev",
+      "source": "./",
+      "description": "Divide-and-conquer development pattern. Decomposes complex projects into independent package nodes connected by contract interfaces."
+    }
+  ]
+}
