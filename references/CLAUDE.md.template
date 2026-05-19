@@ -46,7 +46,9 @@ This applies to ALL workflows — whether triggered by slash commands, natural l
 - Dev agents may READ `contracts/` and `shared/` but NOT modify them
 - Dev agents CANNOT read `tests/` or other nodes' directories — hooks enforce this
 - Dev agents CANNOT run git commands — hooks enforce this
+- Dev agents may ONLY import interfaces already declared in the node's `implements_contracts` and `depends_on_contracts` — they CANNOT add new hard imports or dependencies on their own
 - If a dev agent reports that a contract is insufficient, stop and escalate to the user
+- If a dev agent reports it needs a new dependency, escalate to the zone manager to evaluate, then present the recommendation to the user for approval before proceeding
 
 ## Escalation rules
 

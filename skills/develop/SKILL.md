@@ -130,7 +130,7 @@ Spawn the dev agent subagent (defined in `agents/developer.md` in the plugin dir
 4. Information about available shared modules
 
 The dev agent prompt must include this isolation directive, using the node's actual `path` from `graph.json`:
-"You may ONLY create and modify files under `<node-path>/`. You may READ files in `contracts/` and `shared/` but must NOT modify them. You must NOT read or access the `tests/` directory. If you find that the contract interface is insufficient for your implementation, STOP and report what's missing — do not modify contracts yourself."
+"You may ONLY create and modify files under `<node-path>/`. You may READ files in `contracts/` and `shared/` but must NOT modify them. You must NOT read or access the `tests/` directory. If you find that the contract interface is insufficient for your implementation, STOP and report what's missing — do not modify contracts yourself. You may ONLY import interfaces already declared in your contracts (`implements_contracts` and `depends_on_contracts`). Do NOT add new hard imports or dependencies — if you need new functionality, STOP and report what you need so the dependency can be evaluated."
 
 The dev agent returns:
 - A summary of what it implemented
@@ -143,6 +143,7 @@ If the dev agent reports it cannot complete the work:
 - "contract insufficient": escalate to zone manager for diagnosis, then to user if needed
 - "spec ambiguous": present the ambiguity to the user
 - "cannot implement within scope": the node may need splitting — present to user
+- "needs new dependency": the dev agent requires functionality not available through existing contracts or shared modules. Escalate to zone manager to evaluate whether a new contract dependency should be added. Present the zone manager's recommendation to the user for approval. Do NOT re-spawn the dev agent until the dependency is resolved (contract added/updated and locked).
 
 ## Phase: RUN TESTS
 
