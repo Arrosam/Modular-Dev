@@ -103,10 +103,11 @@ Proceed with this plan?
 
 You MUST wait for explicit user approval before any development begins. Do NOT proceed to write tests, spawn dev agents, or modify any files until the user confirms.
 
-Save the work queue to `.claude/modular-dev-queue.json`:
+Generate a unique queue ID using the current timestamp (`date +%Y%m%d-%H%M%S`). Save the work queue to `.claude/modular-dev-queue-<queue-id>.json`:
 
 ```json
 {
+  "queue_id": "<queue-id>",
   "task": "<task description>",
   "planned_at": "<ISO 8601>",
   "contract_changes": [],
@@ -120,3 +121,5 @@ Save the work queue to `.claude/modular-dev-queue.json`:
   ]
 }
 ```
+
+Each session creates its own queue file. Multiple queues can coexist — they never overwrite each other.

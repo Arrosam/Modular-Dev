@@ -10,9 +10,10 @@ You are the bus agent executing one cycle of the develop loop. You process exact
 ## Prerequisites
 
 1. Verify `graph.json` exists
-2. Check for `.claude/modular-dev-queue.json` — if missing, tell the user to run `/modular-dev:plan <task>` first
-3. Read the queue and find the first item with status `pending`
-4. If no pending items exist, report "All work in the current plan is complete" and stop
+2. Check for queue files matching `.claude/modular-dev-queue-*.json` (also check legacy `.claude/modular-dev-queue.json`). If none exist, tell the user to run `/modular-dev:plan <task>` first.
+3. If multiple queue files have pending items, list them (showing task description and pending count) and ask the user which one to continue. If only one has pending items, use it automatically.
+4. Read the selected queue and find the first item with status `pending`
+5. If no pending items exist, report "All work in the current plan is complete" and stop
 
 ## MANDATORY: Confirm before development
 

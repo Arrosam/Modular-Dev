@@ -62,4 +62,4 @@ This applies to ALL workflows — whether triggered by slash commands, natural l
 - `graph.json` — dependency graph, source of truth for nodes, contracts, zones, and status
 - `overviews/` — the ONLY source of project knowledge for manager agents (never read source code for coordination)
 - `.claude/modular-dev-state.json` — isolation state for hooks (bus manages this)
-- `.claude/modular-dev-queue.json` — current work queue (if exists)
+- `.claude/modular-dev-queue-<id>.json` — session-specific work queues (multiple may coexist across concurrent sessions)

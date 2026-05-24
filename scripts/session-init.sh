@@ -18,11 +18,18 @@ PROJECT_NAME=$(grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' "$GRAPH_FILE" | 
 TOTAL_NODES=$(grep -c '"status"' "$GRAPH_FILE" 2>/dev/null || echo "0")
 DONE_NODES=$(grep -c '"done"' "$GRAPH_FILE" 2>/dev/null || echo "0")
 
-# Queue status
+# Queue status — scan all session-specific queue files
 QUEUE_MSG="No active queue"
-if [ -f ".claude/modular-dev-queue.json" ]; then
-  PENDING=$(grep -c '"pending"' .claude/modular-dev-queue.json 2>/dev/null || echo "0")
-  QUEUE_MSG="${PENDING} items pending"
+TOTAL_PENDING=0
+QUEUE_COUNT=0
+for f in .claude/modular-dev-queue-*.json .claude/modular-dev-queue.json; do
+  [ -f "$f" ] || continue
+  P=$(grep -c '"pending"' "$f" 2>/dev/null || echo "0")
+  TOTAL_PENDING=$((TOTAL_PENDING + P))
+  QUEUE_COUNT=$((QUEUE_COUNT + 1))
+done
+if [ "$QUEUE_COUNT" -gt 0 ]; then
+  QUEUE_MSG="${TOTAL_PENDING} items pending across ${QUEUE_COUNT} queue(s)"
 fi
 
 # Output must be valid JSON - use simple safe string

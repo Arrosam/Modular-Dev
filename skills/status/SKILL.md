@@ -26,9 +26,10 @@ Contracts:
 Shared:
   ✓ <shared-id> — <description>
 
-Current queue:
-  <If .claude/modular-dev-queue.json exists, show pending items>
-  <If no queue, show "No active work queue. Run /modular-dev:plan to create one.">
+Active queues:
+  <For each .claude/modular-dev-queue-*.json (and legacy .claude/modular-dev-queue.json):>
+    Queue <queue-id>: "<task>" — <N> pending / <M> total
+  <If no queue files exist, show "No active work queue. Run /modular-dev:plan to create one.">
 
 Next developable nodes:
   <List nodes whose dependencies are all satisfied and status is pending>
