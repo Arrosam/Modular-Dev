@@ -113,17 +113,20 @@ All inter-agent communication goes through the bus as natural language in the su
 The bus maintains a state file at `.claude/modular-dev-state.json` that controls hook enforcement:
 
 ```json
-{"role": "bus", "active_node": null}    // normal mode — no restrictions
-{"role": "dev", "active_node": "auth"}  // dev mode — hooks enforce isolation
+{"role": "bus", "active_node": null, "since": null}                          // normal mode — no restrictions
+{"role": "dev", "active_node": "auth", "since": "2026-05-19T14:30:00Z"}     // dev mode — hooks enforce isolation
 ```
 
-State transitions:
-1. **SessionStart hook** → resets to bus mode
-2. **Bus writes state** → sets dev mode with active_node before spawning dev agent
-3. **PreToolUse hooks** → read state, block forbidden operations in dev mode
-4. **PostToolUse Agent hook** → resets to bus mode after any subagent completes
+The `since` field is an ISO 8601 timestamp set when dev mode is activated. It allows other concurrent sessions to detect an active dev agent and avoid conflicts. Locks older than 30 minutes are treated as stale.
 
-The bus MUST write the state file before spawning a dev agent. The PostToolUse hook on Agent automatically resets state after the dev agent returns, so the bus doesn't need to manually reset.
+State transitions:
+1. **SessionStart hook** → resets to bus mode ONLY if no active dev agent (protects concurrent sessions)
+2. **Bus checks state** → if another dev agent is active (role=dev, since < 30 min), warns the user before proceeding
+3. **Bus writes state** → sets dev mode with active_node and since timestamp before spawning dev agent
+4. **PreToolUse hooks** → read state, block forbidden operations in dev mode
+5. **PostToolUse Agent hook** → resets to bus mode after subagent completes (only if currently in dev mode)
+
+The bus MUST write the state file before spawning a dev agent. The bus MUST check for an existing dev lock before writing. The PostToolUse hook on Agent automatically resets state after the dev agent returns, so the bus doesn't need to manually reset.
 
 The hooks provide hard enforcement — even if the dev agent's prompt-level isolation is ignored, the hooks will block forbidden tool calls with exit code 2.
 

@@ -57,9 +57,18 @@ This applies to ALL workflows — whether triggered by slash commands, natural l
 - When tests fail 3 times: spawn zone manager to diagnose (test issue / spec issue / dev issue), present diagnosis to user.
 - Never make architectural decisions autonomously — always confirm with the user.
 
+## Concurrency rules
+
+Multiple sessions may run concurrently on the same project, but dev agent isolation is project-wide:
+
+- **Only one dev agent at a time**: before spawning a dev agent, check `.claude/modular-dev-state.json`. If another session's dev agent is active (role=dev, since < 30 min), warn the user and wait. The state file includes a `since` timestamp for stale-lock detection.
+- **Queue files are session-isolated**: each session uses its own `.claude/modular-dev-queue-<id>.json`. Planning in one session never overwrites another's queue.
+- **graph.json updates must be atomic**: always re-read `graph.json` immediately before modifying and write back immediately. Do not use a cached copy from earlier in the workflow.
+- **Concurrent planning and status are safe**: only the DEVELOP phase requires exclusive access.
+
 ## Key files
 
 - `graph.json` — dependency graph, source of truth for nodes, contracts, zones, and status
 - `overviews/` — the ONLY source of project knowledge for manager agents (never read source code for coordination)
-- `.claude/modular-dev-state.json` — isolation state for hooks (bus manages this)
+- `.claude/modular-dev-state.json` — isolation state for hooks; includes `since` timestamp for concurrent-session detection (bus manages this)
 - `.claude/modular-dev-queue-<id>.json` — session-specific work queues (multiple may coexist across concurrent sessions)

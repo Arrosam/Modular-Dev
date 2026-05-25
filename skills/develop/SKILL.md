@@ -110,10 +110,22 @@ The tests are now written and committed. The dev agent in the next phase will NO
 
 ## Phase: DEVELOP
 
-Before spawning the dev agent, read the node's `path` field from `graph.json` to determine its actual directory (e.g. `krakey/engines/recall`, not necessarily `packages/<node-id>`). Then write the isolation state file so that hooks can enforce boundaries at the tool level:
+Before spawning the dev agent, read the node's `path` field from `graph.json` to determine its actual directory (e.g. `krakey/engines/recall`, not necessarily `packages/<node-id>`).
+
+### Concurrent dev-agent check
+
+Before setting dev mode, read `.claude/modular-dev-state.json`. If `role` is `"dev"`, another session may have a dev agent running. Read the `since` timestamp:
+- If less than 30 minutes old: **warn the user** — "Another dev agent appears to be active for node `<X>` (started `<time>`). Running concurrent dev agents will cause hook isolation conflicts. Wait for it to finish, or override?"
+- If older than 30 minutes or no timestamp: treat as stale, safe to override.
+
+Only proceed after the user confirms or the state is clear.
+
+### Set isolation state
+
+Write the state file with a `since` timestamp so other sessions can detect the active lock:
 
 ```bash
-echo '{"role":"dev","active_node":"<node-id>"}' > .claude/modular-dev-state.json
+echo '{"role":"dev","active_node":"<node-id>","since":"<ISO 8601 now>"}' > .claude/modular-dev-state.json
 ```
 
 This activates three PreToolUse hooks that will automatically block the dev agent from:
@@ -223,7 +235,7 @@ Each completed node is one logical unit — one commit. Do not split a node's ch
 2. Commit with a concise message describing the logical unit of work:
    `git commit -m "[modular-dev] <node-id>: <one-line summary from dev agent>" --no-verify`
    - Do NOT include `Co-authored-by` lines in commit messages. A PostToolUse hook automatically strips them if they appear.
-3. Update `graph.json`: set node status to `done`
+3. Update `graph.json`: **re-read** the file immediately before modifying, change only the target node's status to `done`, and write back immediately. This minimizes the race window with other concurrent sessions. Do NOT cache a stale copy of `graph.json` from earlier in the workflow.
 4. Validate and apply the dev agent's proposed overview update:
    - Read the contract type signatures
    - Check that every method claimed in the overview exists in the contracts
