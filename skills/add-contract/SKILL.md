@@ -54,7 +54,7 @@ Set contract status to `tested` in `graph.json`.
 
 ```
 git add .
-git commit -m "[modular-dev] add-contract: <contract-id> connecting <node-a> ↔ <node-b>"
+git commit -m "add-contract: <contract-id> connecting <node-a> ↔ <node-b>"
 ```
 
 ## Modify existing contract (breaking change)
@@ -100,7 +100,7 @@ For each affected node:
 
 ```
 git add .
-git commit -m "[modular-dev] modify-contract: <contract-id> — <summary of change>"
+git commit -m "modify-contract: <contract-id> — <summary of change>"
 ```
 
 Report which nodes need re-development and suggest running `/modular-dev:plan` to re-plan.

@@ -36,7 +36,7 @@ This applies to ALL workflows — whether triggered by slash commands, natural l
 ## Commit rules
 
 - One commit per logical unit (one node's implementation = one commit, meta updates = separate commit)
-- Commit message format: `[modular-dev] <node-id>: <one-line summary>`
+- Commit message format: `<node-id>: <one-line summary>`
 - Do NOT include `Co-authored-by` lines in commit messages
 - Only the bus commits — dev agents are blocked from git operations by hooks
 

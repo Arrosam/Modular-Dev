@@ -42,7 +42,7 @@ Read the updated `graph.json` and re-run zone partitioning:
 
 ```
 git add .
-git commit -m "[modular-dev] add-node: <node-id>"
+git commit -m "add-node: <node-id>"
 ```
 
 Report: "Node `<node-id>` added to zone `<zone-id>`. Run `/modular-dev:plan <task>` to plan its development."

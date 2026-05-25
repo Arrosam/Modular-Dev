@@ -104,7 +104,7 @@ The test-writer returns:
 1. If the test-writer reports assumptions: present them to the user for confirmation. If the user disagrees, have the test-writer revise.
 2. If the test-writer reports coverage gaps: present them to the user. The user may clarify the spec (re-enter ANALYZE) or accept the gap.
 3. Once confirmed, update `graph.json`: set the contract status to `tested` and record the test file path.
-4. Commit the test files: `git add tests/ && git commit -m "[modular-dev] tests: edge tests for <node-id> contracts"`
+4. Commit the test files: `git add tests/ && git commit -m "tests: edge tests for <node-id> contracts"`
 
 The tests are now written and committed. The dev agent in the next phase will NOT be given access to these files.
 
@@ -233,7 +233,7 @@ Each completed node is one logical unit — one commit. Do not split a node's ch
 
 1. Stage changes: `git add <node-path>/` (using the node's `path` from `graph.json`)
 2. Commit with a concise message describing the logical unit of work:
-   `git commit -m "[modular-dev] <node-id>: <one-line summary from dev agent>" --no-verify`
+   `git commit -m "<node-id>: <one-line summary from dev agent>" --no-verify`
    - Do NOT include `Co-authored-by` lines in commit messages. A PostToolUse hook automatically strips them if they appear.
 3. Update `graph.json`: **re-read** the file immediately before modifying, change only the target node's status to `done`, and write back immediately. This minimizes the race window with other concurrent sessions. Do NOT cache a stale copy of `graph.json` from earlier in the workflow.
 4. Validate and apply the dev agent's proposed overview update:
@@ -242,7 +242,7 @@ Each completed node is one logical unit — one commit. Do not split a node's ch
    - Write the updated overview to `overviews/nodes/<node-id>.md`
 5. Stage and commit meta changes as a separate logical unit:
    `git add graph.json overviews/`
-   `git commit -m "[modular-dev] meta: update graph and overview for <node-id>"`
+   `git commit -m "meta: update graph and overview for <node-id>"`
 6. Update the work queue: set this item's status to `done`
 7. Report to user:
 

@@ -130,4 +130,4 @@ Present the user with:
 - The BFS development order (which nodes can be built first)
 - "The project is ready. Describe any task and I'll automatically analyze, plan, develop, test, and commit — no slash commands needed."
 
-Commit the entire skeleton: `[modular-dev] init: project skeleton with <N> nodes, <M> contracts`
+Commit the entire skeleton: `init: project skeleton with <N> nodes, <M> contracts`

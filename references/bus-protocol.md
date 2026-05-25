@@ -54,7 +54,7 @@ IDLE → ANALYZE → WRITE TESTS → DEVELOP → RUN TESTS → COMMIT → IDLE
 
 On pass:
 1. Stage all changes under the node's directory (the `path` from `graph.json`)
-2. Commit with message: `[modular-dev] <node-id>: <one-line summary>`
+2. Commit with message: `<node-id>: <one-line summary>`
 3. Update the node's status in `graph.json` to `done`
 4. Update the node's overview file with the dev agent's proposed update (after validation)
 5. Return to IDLE or pick the next node in the BFS queue
