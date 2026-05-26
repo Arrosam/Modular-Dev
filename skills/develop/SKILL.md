@@ -15,16 +15,6 @@ You are the bus agent executing one cycle of the develop loop. You process exact
 4. Read the selected queue and find the first item with status `pending`
 5. If no pending items exist, report "All work in the current plan is complete" and stop
 
-## MANDATORY: Confirm before development
-
-Before executing ANY phase beyond ANALYZE, you MUST present the user with:
-1. **Which node** will be developed (node ID and description)
-2. **What changes** will be made (the refined spec summary)
-
-Then ask: "Proceed with development of this node?"
-
-Do NOT write tests, spawn dev agents, or modify any files until the user explicitly approves. This is a hard requirement with no exceptions.
-
 ## Phase: ANALYZE
 
 Read the work queue item to get the `node_id`, `zone_id`, and `spec`.
@@ -56,7 +46,7 @@ Validate:
 Respond with the final, refined spec or report issues.
 ```
 
-If the zone manager reports issues, pause and present them to the user.
+If the zone manager reports critical issues that fundamentally conflict with the plan (e.g., a contract is missing required methods, the spec contradicts current code state), pause and escalate to the user. Do NOT interrupt for minor refinements or details the dev agent can handle — the user approved the plan, so routine development proceeds without confirmation.
 
 ## Phase: WRITE TESTS
 

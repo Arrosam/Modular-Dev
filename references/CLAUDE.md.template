@@ -24,14 +24,20 @@ When the user describes any task (feature, bug fix, change), follow this sequenc
 9. **Loop**: Move to the next node in the BFS queue. Repeat steps 5-8 until all nodes are done.
 10. **Report**: Summarize what was completed.
 
-## HARD REQUIREMENT: No development without explicit approval
+## HARD REQUIREMENT: Plan approval gates development
 
 You MUST NOT begin any development work (writing tests, spawning dev agents, modifying code) until you have:
 1. Clearly stated to the user which nodes will be modified
-2. Clearly stated what changes will be made to each node
+2. Clearly stated what changes will be made to each node (with enough detail: files, methods, data flow)
 3. Received explicit approval from the user to proceed
 
 This applies to ALL workflows — whether triggered by slash commands, natural language tasks, or automatic bus agent behavior. No exceptions.
+
+**Once the user approves the plan, development runs uninterrupted.** Each node in the BFS queue is processed (test → develop → test → commit) without per-node confirmation. Only interrupt for genuinely unexpected issues:
+- A contract is insufficient for the planned work
+- The spec fundamentally conflicts with the current code state
+- A new dependency is needed that wasn't in the plan
+Do NOT pause for routine confirmations — the user's plan approval covers all planned work.
 
 ## Commit rules
 

@@ -41,13 +41,35 @@ Relevant contract overviews:
 Relevant node overviews:
 <content of overviews/nodes/<node-id>.md for nodes in this zone>
 
-Analyze this task and respond with:
+Analyze this task and produce a COMPLETE development spec for each affected node. The spec must be detailed enough that a dev agent can implement it without asking questions. Respond with:
+
 1. Which nodes in your zone need modification (list node IDs)
-2. For each affected node: what specifically needs to change (a precise development spec)
+2. For EACH affected node, a full implementation spec containing ALL of:
+   a. Files to create or modify (exact file paths relative to the node directory)
+   b. Functions/methods/classes to add or change (with signatures and parameter types)
+   c. Data structures or state changes involved
+   d. How this node interacts with its declared contracts (which interface methods are called, what data flows in/out)
+   e. Edge cases and error handling expectations
+   f. Any configuration or initialization changes
 3. Which contracts are affected (list contract IDs and whether they need modification)
 4. Whether other zones are impacted (list zone IDs and why)
-5. Any ambiguities that need user clarification
+5. Any ambiguities that CANNOT be resolved from the existing overviews — only flag genuine unknowns, do not ask about details you can infer from the contracts and overviews
 ```
+
+### Iterate until spec is actionable
+
+Review the zone manager's response. If any node spec is too vague to implement (e.g., says "update the handler" without specifying which methods change and how), re-prompt the zone manager:
+
+```
+Your spec for node <node-id> is not detailed enough. A dev agent needs to implement this without asking questions.
+
+Missing details:
+<list what's missing — e.g. "no method signatures", "unclear data flow from contract X", "no error handling spec">
+
+Refine the spec with concrete file paths, method signatures, data structures, and integration points.
+```
+
+Repeat until every node has a spec that answers: what files, what functions, what data, how it connects to contracts. Do NOT present the plan to the user until all specs are implementation-ready.
 
 ## Step 4: Handle cross-zone impact
 
@@ -89,11 +111,13 @@ Development plan for: <task summary>
 Contract changes (requires approval):
   <contract-id>: <what changes>
 
-Nodes to modify:
+Nodes to modify (in BFS order):
   1. [<node-id>] <one-line description of what this node does>
-     Changes: <specific description of what will be modified and why>
+     Changes: <concise summary of what will be modified>
+     Key details: <files affected, new methods/classes, data flow changes>
   2. [<node-id>] <one-line description of what this node does>
-     Changes: <specific description of what will be modified and why>
+     Changes: <concise summary of what will be modified>
+     Key details: <files affected, new methods/classes, data flow changes>
   ...
 
 Estimated units of work: <N>
@@ -102,6 +126,8 @@ Proceed with this plan?
 ```
 
 You MUST wait for explicit user approval before any development begins. Do NOT proceed to write tests, spawn dev agents, or modify any files until the user confirms.
+
+**Once the user approves, the plan is final.** Running `/modular-dev:develop` after approval means the user has agreed to ALL planned changes. The develop phase will execute each node without per-node confirmation — it only interrupts for genuinely unexpected issues (contract insufficient, spec fundamentally wrong, new dependency needed).
 
 Generate a unique queue ID using the current timestamp (`date +%Y%m%d-%H%M%S`). Save the work queue to `.claude/modular-dev-queue-<queue-id>.json`:
 
