@@ -10,12 +10,12 @@ STATE_FILE=".claude/modular-dev-state.json"
 grep -q '"role".*"dev"' "$STATE_FILE" 2>/dev/null || exit 0
 
 # Cross-session safety: if state was set by a different Claude Code process, skip blocking
-OWNER_PID=$(grep -o '"owner_pid"[[:space:]]*:[[:space:]]*"[^"]*"' "$STATE_FILE" 2>/dev/null | grep -o '"[^"]*"$' | tr -d '"')
+OWNER_PID=$(grep -o '"owner_pid"[[:space:]]*:[[:space:]]*"[^"]*"' "$STATE_FILE" 2>/dev/null | grep -o '"[^"]*"$' | tr -d $'"\r')
 if [ -n "$OWNER_PID" ] && [ -n "$PPID" ] && [ "$OWNER_PID" != "$PPID" ]; then
   exit 0
 fi
 
-ACTIVE_NODE=$(grep -o '"active_node".*"[^"]*"' "$STATE_FILE" 2>/dev/null | grep -o '[^"]*"$' | tr -d '"')
+ACTIVE_NODE=$(grep -o '"active_node".*"[^"]*"' "$STATE_FILE" 2>/dev/null | grep -o '[^"]*"$' | tr -d $'"\r')
 [ -z "$ACTIVE_NODE" ] && exit 0
 
 # Resolve node's actual path from the nodes section of graph.json
@@ -25,14 +25,14 @@ if [ -f "graph.json" ]; then
     /"nodes"[[:space:]]*:/ { s=1 }
     /"contracts"[[:space:]]*:/ || /"shared"[[:space:]]*:/ || /"zones"[[:space:]]*:/ { s=0 }
     s && $0 ~ "\"" node "\"[[:space:]]*:" { f=1 }
-    f && /"path"/ { sub(/.*"path"[[:space:]]*:[[:space:]]*"/, ""); sub(/".*/, ""); print; exit }
+    f && /"path"/ { sub(/.*"path"[[:space:]]*:[[:space:]]*"/, ""); sub(/".*/, ""); gsub(/\r/, ""); print; exit }
   ' graph.json 2>/dev/null)
   [ -n "$RESOLVED" ] && NODE_PATH="$RESOLVED"
 fi
 
-INPUT=$(cat)
-FILE_PATH=$(echo "$INPUT" | grep -o '"file_path"[^,}]*' | head -1 | grep -o '"[^"]*"$' | tr -d '"')
-[ -z "$FILE_PATH" ] && FILE_PATH=$(echo "$INPUT" | grep -o '"path"[^,}]*' | head -1 | grep -o '"[^"]*"$' | tr -d '"')
+INPUT=$(cat | tr -d $'\r')
+FILE_PATH=$(echo "$INPUT" | grep -o '"file_path"[^,}]*' | head -1 | grep -o '"[^"]*"$' | tr -d $'"\r')
+[ -z "$FILE_PATH" ] && FILE_PATH=$(echo "$INPUT" | grep -o '"path"[^,}]*' | head -1 | grep -o '"[^"]*"$' | tr -d $'"\r')
 [ -z "$FILE_PATH" ] && exit 0
 
 # Normalize backslashes → forward slashes

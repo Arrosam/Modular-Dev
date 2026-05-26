@@ -16,11 +16,11 @@ mkdir -p .claude 2>/dev/null
 SHOULD_RESET=1
 if [ -f ".claude/modular-dev-state.json" ]; then
   if grep -q '"role".*"dev"' .claude/modular-dev-state.json 2>/dev/null; then
-    OWNER_PID=$(grep -o '"owner_pid"[[:space:]]*:[[:space:]]*"[^"]*"' .claude/modular-dev-state.json 2>/dev/null | grep -o '"[^"]*"$' | tr -d '"')
+    OWNER_PID=$(grep -o '"owner_pid"[[:space:]]*:[[:space:]]*"[^"]*"' .claude/modular-dev-state.json 2>/dev/null | grep -o '"[^"]*"$' | tr -d $'"\r')
     # If owned by a different session, don't reset
     if [ -n "$OWNER_PID" ] && [ -n "$PPID" ] && [ "$OWNER_PID" != "$PPID" ]; then
       # Check staleness as fallback (>30 min = stale)
-      SINCE=$(grep -o '"since"[[:space:]]*:[[:space:]]*"[^"]*"' .claude/modular-dev-state.json 2>/dev/null | grep -o '"[^"]*"$' | tr -d '"')
+      SINCE=$(grep -o '"since"[[:space:]]*:[[:space:]]*"[^"]*"' .claude/modular-dev-state.json 2>/dev/null | grep -o '"[^"]*"$' | tr -d $'"\r')
       if [ -n "$SINCE" ]; then
         SINCE_EPOCH=$(date -d "$SINCE" +%s 2>/dev/null || date -jf "%Y-%m-%dT%H:%M:%S" "$SINCE" +%s 2>/dev/null || echo "0")
         NOW_EPOCH=$(date +%s 2>/dev/null || echo "0")
@@ -41,7 +41,7 @@ if [ "$SHOULD_RESET" -eq 1 ]; then
 fi
 
 # Extract project name (simple grep, no python3)
-PROJECT_NAME=$(grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' "$GRAPH_FILE" | head -1 | grep -o '"[^"]*"$' | tr -d '"')
+PROJECT_NAME=$(grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' "$GRAPH_FILE" | head -1 | grep -o '"[^"]*"$' | tr -d $'"\r')
 [ -z "$PROJECT_NAME" ] && PROJECT_NAME="unknown"
 
 # Count nodes by status
@@ -65,7 +65,7 @@ fi
 # Warn if another dev agent is active
 DEV_WARN=""
 if [ "$SHOULD_RESET" -eq 0 ]; then
-  ACTIVE=$(grep -o '"active_node"[[:space:]]*:[[:space:]]*"[^"]*"' .claude/modular-dev-state.json 2>/dev/null | grep -o '"[^"]*"$' | tr -d '"')
+  ACTIVE=$(grep -o '"active_node"[[:space:]]*:[[:space:]]*"[^"]*"' .claude/modular-dev-state.json 2>/dev/null | grep -o '"[^"]*"$' | tr -d $'"\r')
   DEV_WARN=" WARNING: another session has a dev agent active for node ${ACTIVE}."
 fi
 
