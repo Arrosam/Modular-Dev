@@ -7,7 +7,7 @@ trap 'exit 0' ERR
 
 [ ! -f "graph.json" ] && exit 0
 
-INPUT=$(cat)
+INPUT=$(cat | tr -d $'\r')
 
 # Detect dev agent by the isolation directive in the prompt
 if echo "$INPUT" | grep -q "ONLY create and modify files under"; then
@@ -16,7 +16,7 @@ if echo "$INPUT" | grep -q "ONLY create and modify files under"; then
 
   # If not found, use the active node already set by the bus
   if [ -z "$NODE_ID" ] && [ -f ".claude/modular-dev-state.json" ]; then
-    NODE_ID=$(grep -o '"active_node".*"[^"]*"' .claude/modular-dev-state.json 2>/dev/null | grep -o '[^"]*"$' | tr -d '"')
+    NODE_ID=$(grep -o '"active_node".*"[^"]*"' .claude/modular-dev-state.json 2>/dev/null | grep -o '[^"]*"$' | tr -d $'"\r')
   fi
 
   if [ -n "$NODE_ID" ]; then
