@@ -113,18 +113,19 @@ All inter-agent communication goes through the bus as natural language in the su
 The bus maintains a state file at `.claude/modular-dev-state.json` that controls hook enforcement:
 
 ```json
-{"role": "bus", "active_node": null, "since": null}                          // normal mode — no restrictions
-{"role": "dev", "active_node": "auth", "since": "2026-05-19T14:30:00Z"}     // dev mode — hooks enforce isolation
+{"role": "bus", "active_node": null, "owner_pid": null, "since": null}                            // normal mode
+{"role": "dev", "active_node": "auth", "owner_pid": "12345", "since": "2026-05-19T14:30:00Z"}    // dev mode
 ```
 
-The `since` field is an ISO 8601 timestamp set when dev mode is activated. It allows other concurrent sessions to detect an active dev agent and avoid conflicts. Locks older than 30 minutes are treated as stale.
+- `owner_pid`: the `$PPID` of the bash process that set the state = the Claude Code process PID. Guard hooks compare this against their own `$PPID` — if they don't match, the tool call is from a different session and the hook skips blocking (exit 0). This prevents session A's dev lock from blocking session B's bus operations.
+- `since`: ISO 8601 timestamp for stale-lock detection. Locks older than 30 minutes are treated as stale and can be overridden.
 
 State transitions:
-1. **SessionStart hook** → resets to bus mode ONLY if no active dev agent (protects concurrent sessions)
-2. **Bus checks state** → if another dev agent is active (role=dev, since < 30 min), warns the user before proceeding
-3. **Bus writes state** → sets dev mode with active_node and since timestamp before spawning dev agent
-4. **PreToolUse hooks** → read state, block forbidden operations in dev mode
-5. **PostToolUse Agent hook** → resets to bus mode after subagent completes (only if currently in dev mode)
+1. **SessionStart hook** → resets to bus mode ONLY if state is owned by this session or is stale (protects concurrent sessions)
+2. **Bus checks state** → if another dev agent is active (role=dev, owner_pid ≠ $PPID, since < 30 min), warns the user before proceeding
+3. **Bus writes state** → sets dev mode with active_node, owner_pid, and since before spawning dev agent
+4. **PreToolUse hooks** → read state; if role=dev AND owner_pid matches $PPID → block forbidden operations; otherwise → allow
+5. **PostToolUse Agent hook** → resets to bus mode only if owner_pid matches $PPID (doesn't touch another session's lock)
 
 The bus MUST write the state file before spawning a dev agent. The bus MUST check for an existing dev lock before writing. The PostToolUse hook on Agent automatically resets state after the dev agent returns, so the bus doesn't need to manually reset.
 

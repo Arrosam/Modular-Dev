@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # PreToolUse Agent: Set dev isolation state when dev agent is spawned
 # Detects the isolation directive in the prompt and ensures state is set
+# Writes owner_pid ($PPID) so guard hooks only apply to this session
 # FAIL-OPEN: any error → allow
 trap 'exit 0' ERR
 
@@ -20,7 +21,8 @@ if echo "$INPUT" | grep -q "ONLY create and modify files under"; then
 
   if [ -n "$NODE_ID" ]; then
     mkdir -p .claude 2>/dev/null
-    echo "{\"role\":\"dev\",\"active_node\":\"$NODE_ID\"}" > .claude/modular-dev-state.json
+    NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "unknown")
+    printf '{"role":"dev","active_node":"%s","owner_pid":"%s","since":"%s"}\n' "$NODE_ID" "$PPID" "$NOW" > .claude/modular-dev-state.json
   fi
 fi
 

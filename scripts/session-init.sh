@@ -8,29 +8,36 @@ GRAPH_FILE="graph.json"
 
 mkdir -p .claude 2>/dev/null
 
-# Only reset state to bus mode if no dev agent is currently active
-# (another session might be running a dev agent — don't break its isolation)
+# Only reset state to bus mode if safe to do so:
+# - No state file exists → create it
+# - State is already bus mode → refresh it
+# - State is dev mode but owned by THIS session or stale → reset
+# - State is dev mode owned by ANOTHER live session → leave it alone
 SHOULD_RESET=1
 if [ -f ".claude/modular-dev-state.json" ]; then
   if grep -q '"role".*"dev"' .claude/modular-dev-state.json 2>/dev/null; then
-    # Check if the dev lock is stale (older than 30 minutes)
-    SINCE=$(grep -o '"since"[[:space:]]*:[[:space:]]*"[^"]*"' .claude/modular-dev-state.json 2>/dev/null | grep -o '"[^"]*"$' | tr -d '"')
-    if [ -n "$SINCE" ]; then
-      SINCE_EPOCH=$(date -d "$SINCE" +%s 2>/dev/null || date -jf "%Y-%m-%dT%H:%M:%S" "$SINCE" +%s 2>/dev/null || echo "0")
-      NOW_EPOCH=$(date +%s 2>/dev/null || echo "0")
-      DIFF=$((NOW_EPOCH - SINCE_EPOCH))
-      if [ "$DIFF" -lt 1800 ]; then
+    OWNER_PID=$(grep -o '"owner_pid"[[:space:]]*:[[:space:]]*"[^"]*"' .claude/modular-dev-state.json 2>/dev/null | grep -o '"[^"]*"$' | tr -d '"')
+    # If owned by a different session, don't reset
+    if [ -n "$OWNER_PID" ] && [ -n "$PPID" ] && [ "$OWNER_PID" != "$PPID" ]; then
+      # Check staleness as fallback (>30 min = stale)
+      SINCE=$(grep -o '"since"[[:space:]]*:[[:space:]]*"[^"]*"' .claude/modular-dev-state.json 2>/dev/null | grep -o '"[^"]*"$' | tr -d '"')
+      if [ -n "$SINCE" ]; then
+        SINCE_EPOCH=$(date -d "$SINCE" +%s 2>/dev/null || date -jf "%Y-%m-%dT%H:%M:%S" "$SINCE" +%s 2>/dev/null || echo "0")
+        NOW_EPOCH=$(date +%s 2>/dev/null || echo "0")
+        DIFF=$((NOW_EPOCH - SINCE_EPOCH))
+        if [ "$DIFF" -lt 1800 ]; then
+          SHOULD_RESET=0
+        fi
+      else
         SHOULD_RESET=0
       fi
-    else
-      # No timestamp — could be stale legacy state, but be safe
-      SHOULD_RESET=0
     fi
+    # If owned by this session (or no owner), safe to reset
   fi
 fi
 
 if [ "$SHOULD_RESET" -eq 1 ]; then
-  echo '{"role":"bus","active_node":null,"since":null}' > .claude/modular-dev-state.json
+  echo '{"role":"bus","active_node":null,"owner_pid":null,"since":null}' > .claude/modular-dev-state.json
 fi
 
 # Extract project name (simple grep, no python3)

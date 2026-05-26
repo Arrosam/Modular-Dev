@@ -122,11 +122,13 @@ Only proceed after the user confirms or the state is clear.
 
 ### Set isolation state
 
-Write the state file with a `since` timestamp so other sessions can detect the active lock:
+Write the state file with `owner_pid` (for cross-session isolation) and `since` (for stale-lock detection):
 
 ```bash
-echo '{"role":"dev","active_node":"<node-id>","since":"<ISO 8601 now>"}' > .claude/modular-dev-state.json
+echo '{"role":"dev","active_node":"<node-id>","owner_pid":"'"$PPID"'","since":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}' > .claude/modular-dev-state.json
 ```
+
+The `owner_pid` captures `$PPID` (the Claude Code process PID). Guard hooks compare this against their own `$PPID` — if they don't match, the hook knows the tool call is from a different session and skips blocking.
 
 This activates three PreToolUse hooks that will automatically block the dev agent from:
 - Writing files outside the node's directory (resolved from `graph.json`)
