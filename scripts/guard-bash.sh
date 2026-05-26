@@ -9,12 +9,12 @@ STATE_FILE=".claude/modular-dev-state.json"
 grep -q '"role".*"dev"' "$STATE_FILE" 2>/dev/null || exit 0
 
 # Cross-session safety: if state was set by a different Claude Code process, skip blocking
-OWNER_PID=$(grep -o '"owner_pid"[[:space:]]*:[[:space:]]*"[^"]*"' "$STATE_FILE" 2>/dev/null | grep -o '"[^"]*"$' | tr -d '"')
+OWNER_PID=$(grep -o '"owner_pid"[[:space:]]*:[[:space:]]*"[^"]*"' "$STATE_FILE" 2>/dev/null | grep -o '"[^"]*"$' | tr -d $'"\r')
 if [ -n "$OWNER_PID" ] && [ -n "$PPID" ] && [ "$OWNER_PID" != "$PPID" ]; then
   exit 0
 fi
 
-INPUT=$(cat)
+INPUT=$(cat | tr -d $'\r')
 COMMAND=$(echo "$INPUT" | grep -o '"command"[^}]*' | head -1 | sed 's/^"command"[[:space:]]*:[[:space:]]*"//' | sed 's/"[[:space:]]*$//')
 [ -z "$COMMAND" ] && exit 0
 

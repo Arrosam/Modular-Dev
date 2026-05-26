@@ -11,7 +11,7 @@ STATE_FILE=".claude/modular-dev-state.json"
 grep -q '"role".*"dev"' "$STATE_FILE" 2>/dev/null || exit 0
 
 # Only reset if this session owns the state (or no owner_pid set — legacy)
-OWNER_PID=$(grep -o '"owner_pid"[[:space:]]*:[[:space:]]*"[^"]*"' "$STATE_FILE" 2>/dev/null | grep -o '"[^"]*"$' | tr -d '"')
+OWNER_PID=$(grep -o '"owner_pid"[[:space:]]*:[[:space:]]*"[^"]*"' "$STATE_FILE" 2>/dev/null | grep -o '"[^"]*"$' | tr -d $'"\r')
 if [ -n "$OWNER_PID" ] && [ -n "$PPID" ] && [ "$OWNER_PID" != "$PPID" ]; then
   exit 0  # Not our lock — don't touch it
 fi
