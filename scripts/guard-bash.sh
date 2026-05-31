@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 # PreToolUse: Block git ops and test access via bash in dev mode
-# Normalizes Windows backslash paths for cross-platform compatibility
-# FAIL-OPEN: any error → allow
+# State is per-session: .claude/modular-dev-state/<session_id>.json
+# Normalizes Windows backslash paths and CRLF for cross-platform compatibility
+# FAIL-OPEN: any error, or an unidentifiable session, → allow
 trap 'exit 0' ERR
 
-STATE_FILE=".claude/modular-dev-state.json"
-[ ! -f "$STATE_FILE" ] && exit 0
-grep -q '"role".*"dev"' "$STATE_FILE" 2>/dev/null || exit 0
-
-# Cross-session safety: if state was set by a different Claude Code process, skip blocking
-OWNER_PID=$(grep -o '"owner_pid"[[:space:]]*:[[:space:]]*"[^"]*"' "$STATE_FILE" 2>/dev/null | grep -o '"[^"]*"$' | tr -d $'"\r')
-if [ -n "$OWNER_PID" ] && [ -n "$PPID" ] && [ "$OWNER_PID" != "$PPID" ]; then
-  exit 0
-fi
-
 INPUT=$(cat | tr -d $'\r')
+
+# Identify this session. No session id → fail open (allow).
+SESSION_ID=$(echo "$INPUT" | grep -o '"session_id"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | grep -o '[^"]*"$' | tr -d $'"\r' | tr -cd 'A-Za-z0-9_-')
+[ -z "$SESSION_ID" ] && exit 0
+
+STATE_FILE=".claude/modular-dev-state/$SESSION_ID.json"
+[ ! -f "$STATE_FILE" ] && exit 0
+grep -q '"role"[^}]*"dev"' "$STATE_FILE" 2>/dev/null || exit 0
+
 COMMAND=$(echo "$INPUT" | grep -o '"command"[^}]*' | head -1 | sed 's/^"command"[[:space:]]*:[[:space:]]*"//' | sed 's/"[[:space:]]*$//')
 [ -z "$COMMAND" ] && exit 0
 

@@ -18,31 +18,26 @@ When the user describes any task (feature, bug fix, change), follow this sequenc
    - Ask: "Proceed with this plan?"
    - Do NOT write tests, spawn dev agents, or modify any files until the user explicitly approves.
 5. **Write tests**: For each node to be modified, spawn the test-writer subagent to write edge tests BEFORE development, based on contract definitions only. Skip if tests already exist and contracts haven't changed. Commit test files.
-6. **Develop**: For each node in BFS order, set the isolation state (`echo '{"role":"dev","active_node":"<node-id>","owner_pid":"'"$PPID"'","since":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}' > .claude/modular-dev-state.json`), then spawn the dev subagent. The dev agent can only modify its assigned package. After it returns, the state resets automatically via hooks.
+6. **Develop**: For each node in BFS order, spawn the dev subagent with the canonical isolation directive in its prompt (the node's `path` from `graph.json`, wrapped in backticks). A PreToolUse hook reads that path and sets per-session isolation state automatically — you do NOT write any state file yourself. The dev agent can only modify its assigned package. After it returns, the state resets automatically via hooks.
 7. **Run tests**: Spawn the tester subagent to run edge tests for the modified node's contracts.
 8. **Commit or retry**: If tests pass, commit by logical unit (one node = one commit). If tests fail, retry up to 3 times. After 3 failures, spawn the zone manager to diagnose, then escalate to the user.
 9. **Loop**: Move to the next node in the BFS queue. Repeat steps 5-8 until all nodes are done.
 10. **Report**: Summarize what was completed.
 
-## HARD REQUIREMENT: Plan approval gates development
+## HARD REQUIREMENT: No development without explicit approval
 
 You MUST NOT begin any development work (writing tests, spawning dev agents, modifying code) until you have:
 1. Clearly stated to the user which nodes will be modified
-2. Clearly stated what changes will be made to each node (with enough detail: files, methods, data flow)
+2. Clearly stated what changes will be made to each node
 3. Received explicit approval from the user to proceed
 
 This applies to ALL workflows — whether triggered by slash commands, natural language tasks, or automatic bus agent behavior. No exceptions.
 
-**Once the user approves the plan, development runs uninterrupted.** Each node in the BFS queue is processed (test → develop → test → commit) without per-node confirmation. Only interrupt for genuinely unexpected issues:
-- A contract is insufficient for the planned work
-- The spec fundamentally conflicts with the current code state
-- A new dependency is needed that wasn't in the plan
-Do NOT pause for routine confirmations — the user's plan approval covers all planned work.
-
 ## Commit rules
 
 - One commit per logical unit (one node's implementation = one commit, meta updates = separate commit)
-- Commit message format: `<node-id>: <one-line summary>`
+- Scope every commit to an explicit pathspec: stage with `git add -- <node-path>/` (so newly created files are included — `--only` alone skips untracked files), then `git commit --only -- <node-path>/` (and `-- graph.json overviews/` for meta). `--only` keeps the commit clean even when another session shares the repo. Verify with `git show --name-only --format= HEAD`.
+- Commit message format: `[modular-dev] <node-id>: <one-line summary>`
 - Do NOT include `Co-authored-by` lines in commit messages
 - Only the bus commits — dev agents are blocked from git operations by hooks
 
@@ -63,18 +58,9 @@ Do NOT pause for routine confirmations — the user's plan approval covers all p
 - When tests fail 3 times: spawn zone manager to diagnose (test issue / spec issue / dev issue), present diagnosis to user.
 - Never make architectural decisions autonomously — always confirm with the user.
 
-## Concurrency rules
-
-Multiple sessions may run concurrently on the same project, but dev agent isolation is project-wide:
-
-- **Dev agent isolation is per-session**: the state file includes `owner_pid` (Claude Code PID). Guard hooks only enforce blocking when `owner_pid` matches their own `$PPID` — a different session's dev lock won't block your bus operations. Before spawning a dev agent, still check if another session's dev agent is active (role=dev, owner_pid ≠ $PPID, since < 30 min) and warn the user about potential `graph.json` conflicts.
-- **Queue files are session-isolated**: each session uses its own `.claude/modular-dev-queue-<id>.json`. Planning in one session never overwrites another's queue.
-- **graph.json updates must be atomic**: always re-read `graph.json` immediately before modifying and write back immediately. Do not use a cached copy from earlier in the workflow.
-- **Concurrent planning and status are safe**: only the DEVELOP phase requires exclusive access.
-
 ## Key files
 
 - `graph.json` — dependency graph, source of truth for nodes, contracts, zones, and status
 - `overviews/` — the ONLY source of project knowledge for manager agents (never read source code for coordination)
-- `.claude/modular-dev-state.json` — isolation state for hooks; includes `owner_pid` (Claude Code PID) so guards only apply to the owning session, and `since` for stale-lock detection
+- `.claude/modular-dev-state/<session-id>.json` — per-session isolation state for hooks (the hooks manage this; never write it yourself)
 - `.claude/modular-dev-queue-<id>.json` — session-specific work queues (multiple may coexist across concurrent sessions)

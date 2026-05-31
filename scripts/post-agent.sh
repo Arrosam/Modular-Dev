@@ -1,20 +1,16 @@
 #!/usr/bin/env bash
-# PostToolUse Agent: Reset to bus mode after any subagent completes
-# Only resets if currently in dev mode AND owned by this session (owner_pid matches)
+# PostToolUse Agent: Reset this session to bus mode after a subagent completes
+# State is per-session: .claude/modular-dev-state/<session_id>.json
 # FAIL-OPEN: any error → allow
 trap 'exit 0' ERR
 
-STATE_FILE=".claude/modular-dev-state.json"
-[ ! -f "$STATE_FILE" ] && exit 0
+INPUT=$(cat | tr -d $'\r')
 
-# Only reset if currently in dev mode
-grep -q '"role".*"dev"' "$STATE_FILE" 2>/dev/null || exit 0
+SESSION_ID=$(echo "$INPUT" | grep -o '"session_id"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | grep -o '[^"]*"$' | tr -d $'"\r' | tr -cd 'A-Za-z0-9_-')
+[ -z "$SESSION_ID" ] && exit 0
 
-# Only reset if this session owns the state (or no owner_pid set — legacy)
-OWNER_PID=$(grep -o '"owner_pid"[[:space:]]*:[[:space:]]*"[^"]*"' "$STATE_FILE" 2>/dev/null | grep -o '"[^"]*"$' | tr -d $'"\r')
-if [ -n "$OWNER_PID" ] && [ -n "$PPID" ] && [ "$OWNER_PID" != "$PPID" ]; then
-  exit 0  # Not our lock — don't touch it
-fi
+STATE_FILE=".claude/modular-dev-state/$SESSION_ID.json"
+[ -f "$STATE_FILE" ] || exit 0
 
-echo '{"role":"bus","active_node":null,"owner_pid":null,"since":null}' > "$STATE_FILE"
+echo '{"role":"bus","active_path":null}' > "$STATE_FILE"
 exit 0

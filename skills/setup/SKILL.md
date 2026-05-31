@@ -117,10 +117,9 @@ This is critical — `CLAUDE.md` is what makes the main session automatically fo
 
 The plugin's hooks are automatically loaded by Claude Code from `hooks/hooks.json` — no manual installation needed.
 
-Initialize the bus state file that hooks use to enforce dev agent isolation:
+There is no isolation state to initialize by hand: the hooks create and manage it per session under `.claude/modular-dev-state/<session-id>.json`. Just make sure the `.claude` directory exists for queue and state files:
 ```bash
 mkdir -p .claude
-echo '{"role":"bus","active_node":null}' > .claude/modular-dev-state.json
 ```
 
 ## Step 8: Summary

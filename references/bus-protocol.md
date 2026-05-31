@@ -40,7 +40,7 @@ IDLE → ANALYZE → WRITE TESTS → DEVELOP → RUN TESTS → COMMIT → IDLE
    - The node's overview file content
    - The contract definitions (file contents from contracts/<id>/)
    - The shared module paths
-   - Instruction: "You may only modify files under packages/<node-id>/. You may read contracts/ and shared/ but not modify them. Do not read or access the tests/ directory."
+   - Instruction (verbatim, with the node's actual `path` from `graph.json` in backticks): "You may ONLY create and modify files under `<node-path>/`. You may read contracts/ and shared/ but not modify them. Do not read or access the tests/ directory." The isolation hook reads the node path from between the backticks.
 3. Receive: completion message with a summary of changes made, and a proposed overview update
 
 ## Step: RUN TESTS
@@ -53,8 +53,8 @@ IDLE → ANALYZE → WRITE TESTS → DEVELOP → RUN TESTS → COMMIT → IDLE
 ## Step: COMMIT
 
 On pass:
-1. Stage all changes under the node's directory (the `path` from `graph.json`)
-2. Commit with message: `<node-id>: <one-line summary>`
+1. Stage the node's paths (`git add -- <node-path>/`, so newly created files are included) then commit scoped to that pathspec — `git commit --only -- <node-path>/` (the `path` from `graph.json`) — so only the node's files enter the commit even if another session has unrelated changes staged. Message: `[modular-dev] <node-id>: <one-line summary>`
+2. Verify with `git show --name-only --format= HEAD` that every committed path is under `<node-path>/`; if not, the commit is contaminated — stop and correct it
 3. Update the node's status in `graph.json` to `done`
 4. Update the node's overview file with the dev agent's proposed update (after validation)
 5. Return to IDLE or pick the next node in the BFS queue
@@ -110,26 +110,24 @@ All inter-agent communication goes through the bus as natural language in the su
 
 ## Hook-based state management
 
-The bus maintains a state file at `.claude/modular-dev-state.json` that controls hook enforcement:
+Isolation state is owned entirely by the hooks and is **per session**, stored at `.claude/modular-dev-state/<session_id>.json`:
 
 ```json
-{"role": "bus", "active_node": null, "owner_pid": null, "since": null}                            // normal mode
-{"role": "dev", "active_node": "auth", "owner_pid": "12345", "since": "2026-05-19T14:30:00Z"}    // dev mode
+{"role": "bus", "active_path": null}                   // normal mode — no restrictions
+{"role": "dev", "active_path": "krakey/engines/auth"}  // dev mode — hooks enforce isolation
 ```
 
-- `owner_pid`: the `$PPID` of the bash process that set the state = the Claude Code process PID. Guard hooks compare this against their own `$PPID` — if they don't match, the tool call is from a different session and the hook skips blocking (exit 0). This prevents session A's dev lock from blocking session B's bus operations.
-- `since`: ISO 8601 timestamp for stale-lock detection. Locks older than 30 minutes are treated as stale and can be overridden.
+Keying state by `session_id` (read from the hook payload on stdin) means concurrent bus sessions on the same repo each have their own state cell and cannot clobber or block one another.
 
 State transitions:
-1. **SessionStart hook** → resets to bus mode ONLY if state is owned by this session or is stale (protects concurrent sessions)
-2. **Bus checks state** → if another dev agent is active (role=dev, owner_pid ≠ $PPID, since < 30 min), warns the user before proceeding
-3. **Bus writes state** → sets dev mode with active_node, owner_pid, and since before spawning dev agent
-4. **PreToolUse hooks** → read state; if role=dev AND owner_pid matches $PPID → block forbidden operations; otherwise → allow
-5. **PostToolUse Agent hook** → resets to bus mode only if owner_pid matches $PPID (doesn't touch another session's lock)
+1. **SessionStart hook** → ensures the state directory exists, retires the legacy single-cell `.claude/modular-dev-state.json`, and prunes stale per-session files
+2. **PreToolUse Agent hook** → on a dev-agent spawn (detected by the isolation directive), extracts the node path from the directive and writes dev mode for this session
+3. **PreToolUse Write/Read/Bash hooks** → read this session's state, block forbidden operations in dev mode
+4. **PostToolUse Agent hook** → resets this session to bus mode after the subagent returns
 
-The bus MUST write the state file before spawning a dev agent. The bus MUST check for an existing dev lock before writing. The PostToolUse hook on Agent automatically resets state after the dev agent returns, so the bus doesn't need to manually reset.
+The bus does NOT write the state file itself — it only needs to include the canonical isolation directive (with the node path in backticks) in the dev-agent prompt. The hooks do the rest.
 
-The hooks provide hard enforcement — even if the dev agent's prompt-level isolation is ignored, the hooks will block forbidden tool calls with exit code 2.
+The hooks provide hard enforcement — even if the dev agent's prompt-level isolation is ignored, the hooks will block forbidden tool calls with exit code 2. They **fail open**: if a hook cannot identify the session, it allows the operation rather than wedging, so a misidentified session degrades to prompt-level isolation only.
 
 ## Escalation chain
 
