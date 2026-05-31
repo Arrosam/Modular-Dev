@@ -52,10 +52,13 @@ Set contract status to `tested` in `graph.json`.
 
 ### Step 4: Commit
 
+Scope the commit to the contract's own artifacts so a concurrent session's changes can't be folded in:
+
 ```
-git add .
-git commit -m "add-contract: <contract-id> connecting <node-a> ↔ <node-b>"
+git commit --only --no-verify -m "[modular-dev] add-contract: <contract-id> connecting <node-a> ↔ <node-b>" -- graph.json contracts/<contract-id>/ overviews/contracts/<contract-id>.md tests/<contract-id>.test.*
 ```
+
+Then verify with `git show --name-only --format= HEAD` that only those paths were committed.
 
 ## Modify existing contract (breaking change)
 
@@ -98,9 +101,12 @@ For each affected node:
 
 ### Step 5: Commit and report
 
+Scope the commit to the contract's own artifacts:
+
 ```
-git add .
-git commit -m "modify-contract: <contract-id> — <summary of change>"
+git commit --only --no-verify -m "[modular-dev] modify-contract: <contract-id> — <summary of change>" -- graph.json contracts/<contract-id>/ overviews/contracts/<contract-id>.md tests/<contract-id>.test.*
 ```
+
+Then verify with `git show --name-only --format= HEAD` that only those paths were committed.
 
 Report which nodes need re-development and suggest running `/modular-dev:plan` to re-plan.

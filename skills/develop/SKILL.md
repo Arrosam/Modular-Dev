@@ -15,6 +15,16 @@ You are the bus agent executing one cycle of the develop loop. You process exact
 4. Read the selected queue and find the first item with status `pending`
 5. If no pending items exist, report "All work in the current plan is complete" and stop
 
+## MANDATORY: Confirm before development
+
+Before executing ANY phase beyond ANALYZE, you MUST present the user with:
+1. **Which node** will be developed (node ID and description)
+2. **What changes** will be made (the refined spec summary)
+
+Then ask: "Proceed with development of this node?"
+
+Do NOT write tests, spawn dev agents, or modify any files until the user explicitly approves. This is a hard requirement with no exceptions.
+
 ## Phase: ANALYZE
 
 Read the work queue item to get the `node_id`, `zone_id`, and `spec`.
@@ -46,7 +56,7 @@ Validate:
 Respond with the final, refined spec or report issues.
 ```
 
-If the zone manager reports critical issues that fundamentally conflict with the plan (e.g., a contract is missing required methods, the spec contradicts current code state), pause and escalate to the user. Do NOT interrupt for minor refinements or details the dev agent can handle — the user approved the plan, so routine development proceeds without confirmation.
+If the zone manager reports issues, pause and present them to the user.
 
 ## Phase: WRITE TESTS
 
@@ -94,38 +104,23 @@ The test-writer returns:
 1. If the test-writer reports assumptions: present them to the user for confirmation. If the user disagrees, have the test-writer revise.
 2. If the test-writer reports coverage gaps: present them to the user. The user may clarify the spec (re-enter ANALYZE) or accept the gap.
 3. Once confirmed, update `graph.json`: set the contract status to `tested` and record the test file path.
-4. Commit the test files: `git add tests/ && git commit -m "tests: edge tests for <node-id> contracts"`
+4. Commit the test files, scoping the commit to `tests/` so it captures only test files regardless of anything else in the index:
+   `git commit --only --no-verify -m "[modular-dev] tests: edge tests for <node-id> contracts" -- tests/`
 
 The tests are now written and committed. The dev agent in the next phase will NOT be given access to these files.
 
 ## Phase: DEVELOP
 
-Before spawning the dev agent, read the node's `path` field from `graph.json` to determine its actual directory (e.g. `krakey/engines/recall`, not necessarily `packages/<node-id>`).
+Read the node's `path` field from `graph.json` to determine its actual directory (e.g. `krakey/engines/recall`, not necessarily `packages/<node-id>`). You do NOT write any state file yourself — isolation is set up automatically by hooks.
 
-### Concurrent dev-agent check
+When you spawn the dev agent, a PreToolUse hook detects the isolation directive in the agent's prompt, extracts the node path from it, and records per-session isolation state at `.claude/modular-dev-state/<session-id>.json`. A matching PostToolUse hook resets that state when the agent returns. Because the state is keyed by session id, concurrent bus sessions on the same repo never clobber each other's isolation state.
 
-Before setting dev mode, read `.claude/modular-dev-state.json`. If `role` is `"dev"`, another session may have a dev agent running. Read the `since` timestamp:
-- If less than 30 minutes old: **warn the user** — "Another dev agent appears to be active for node `<X>` (started `<time>`). Running concurrent dev agents will cause hook isolation conflicts. Wait for it to finish, or override?"
-- If older than 30 minutes or no timestamp: treat as stale, safe to override.
-
-Only proceed after the user confirms or the state is clear.
-
-### Set isolation state
-
-Write the state file with `owner_pid` (for cross-session isolation) and `since` (for stale-lock detection):
-
-```bash
-echo '{"role":"dev","active_node":"<node-id>","owner_pid":"'"$PPID"'","since":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}' > .claude/modular-dev-state.json
-```
-
-The `owner_pid` captures `$PPID` (the Claude Code process PID). Guard hooks compare this against their own `$PPID` — if they don't match, the hook knows the tool call is from a different session and skips blocking.
-
-This activates three PreToolUse hooks that will automatically block the dev agent from:
-- Writing files outside the node's directory (resolved from `graph.json`)
+This activates three PreToolUse hooks that automatically block the dev agent from:
+- Writing files outside the node's directory (the path embedded in the directive)
 - Reading `tests/` or other nodes' directories
 - Running git commands or accessing tests via bash
 
-These hooks fire on every tool call the dev agent makes, providing hard enforcement on top of the prompt-level isolation directive.
+These hooks fire on every tool call the dev agent makes, providing hard enforcement on top of the prompt-level isolation directive. For the hooks to engage, the dev agent prompt MUST contain the canonical isolation directive below verbatim, with the node's actual path wrapped in backticks (the hook reads the path from between the backticks).
 
 Spawn the dev agent subagent (defined in `agents/developer.md` in the plugin directory). Construct the prompt by assembling:
 
@@ -190,8 +185,10 @@ Current node overview:
 Contract definitions:
 <contract contents>
 
-Fix the implementation to pass these tests. Same isolation rules apply — only modify files under <node-path>/ (the node's path from graph.json).
+Fix the implementation to pass these tests. Same isolation rules apply: You may ONLY create and modify files under `<node-path>/` (the node's path from graph.json).
 ```
+
+The backtick-wrapped path is required: the isolation hook reads the node path from between the backticks to scope this retried dev agent.
 
 Then re-enter TEST.
 
@@ -223,18 +220,22 @@ Present the zone manager's diagnosis to the user with options:
 
 Each completed node is one logical unit — one commit. Do not split a node's changes across multiple commits, and do not bundle multiple nodes into one commit.
 
-1. Stage changes: `git add <node-path>/` (using the node's `path` from `graph.json`)
-2. Commit with a concise message describing the logical unit of work:
-   `git commit -m "<node-id>: <one-line summary from dev agent>" --no-verify`
+Always scope commits to an explicit pathspec with `git commit --only -- <paths>`. This captures ONLY the named paths into the commit, ignoring anything else that happens to be staged — so a concurrent bus session sharing the repo can never fold its files into this commit, and there is no separate `git add` step to race on the index.
+
+1. Commit the node's implementation, scoped to its directory (the node's `path` from `graph.json`):
+   `git commit --only --no-verify -m "[modular-dev] <node-id>: <one-line summary from dev agent>" -- <node-path>/`
    - Do NOT include `Co-authored-by` lines in commit messages. A PostToolUse hook automatically strips them if they appear.
-3. Update `graph.json`: **re-read** the file immediately before modifying, change only the target node's status to `done`, and write back immediately. This minimizes the race window with other concurrent sessions. Do NOT cache a stale copy of `graph.json` from earlier in the workflow.
+   - If git reports "nothing to commit" for that path, the dev agent made no changes — investigate before continuing rather than committing unrelated files.
+2. VERIFY the commit captured only the intended files:
+   `git show --name-only --format= HEAD`
+   Every path listed MUST be under `<node-path>/`. If any file outside that pathspec appears, STOP and report it — the commit is contaminated. Correct it (e.g. `git reset --soft HEAD^`, then re-commit with the correct `--only -- <node-path>/` pathspec) before continuing.
+3. Update `graph.json`: set node status to `done`
 4. Validate and apply the dev agent's proposed overview update:
    - Read the contract type signatures
    - Check that every method claimed in the overview exists in the contracts
    - Write the updated overview to `overviews/nodes/<node-id>.md`
-5. Stage and commit meta changes as a separate logical unit:
-   `git add graph.json overviews/`
-   `git commit -m "meta: update graph and overview for <node-id>"`
+5. Commit meta changes as a separate logical unit, also pathspec-scoped:
+   `git commit --only --no-verify -m "[modular-dev] meta: update graph and overview for <node-id>" -- graph.json overviews/`
 6. Update the work queue: set this item's status to `done`
 7. Report to user:
 

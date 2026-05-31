@@ -1,29 +1,35 @@
 #!/usr/bin/env bash
-# PreToolUse Agent: Set dev isolation state when dev agent is spawned
-# Detects the isolation directive in the prompt and ensures state is set
-# Writes owner_pid ($PPID) so guard hooks only apply to this session
+# PreToolUse Agent: Set dev isolation state when a dev agent is spawned
+# Detects the isolation directive in the prompt and records the active node
+# path in a per-session state file: .claude/modular-dev-state/<session_id>.json
 # FAIL-OPEN: any error → allow
 trap 'exit 0' ERR
 
-[ ! -f "graph.json" ] && exit 0
-
 INPUT=$(cat | tr -d $'\r')
 
-# Detect dev agent by the isolation directive in the prompt
-if echo "$INPUT" | grep -q "ONLY create and modify files under"; then
-  # Try packages/<node>/ pattern first (skeleton layout)
-  NODE_ID=$(echo "$INPUT" | grep -o 'packages/[a-zA-Z0-9_-]*/' | head -1 | sed 's|packages/||;s|/||')
+# Only act on dev-agent spawns — identified by the canonical isolation directive.
+echo "$INPUT" | grep -q "create and modify files under" || exit 0
 
-  # If not found, use the active node already set by the bus
-  if [ -z "$NODE_ID" ] && [ -f ".claude/modular-dev-state.json" ]; then
-    NODE_ID=$(grep -o '"active_node".*"[^"]*"' .claude/modular-dev-state.json 2>/dev/null | grep -o '[^"]*"$' | tr -d $'"\r')
-  fi
+# Identify this session. Without a session id we cannot scope state safely → allow.
+SESSION_ID=$(echo "$INPUT" | grep -o '"session_id"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | grep -o '[^"]*"$' | tr -d $'"\r' | tr -cd 'A-Za-z0-9_-')
+[ -z "$SESSION_ID" ] && exit 0
 
-  if [ -n "$NODE_ID" ]; then
-    mkdir -p .claude 2>/dev/null
-    NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "unknown")
-    printf '{"role":"dev","active_node":"%s","owner_pid":"%s","since":"%s"}\n' "$NODE_ID" "$PPID" "$NOW" > .claude/modular-dev-state.json
-  fi
+# Normalize any escaped slashes the prompt JSON may contain.
+NORM_INPUT=$(echo "$INPUT" | sed 's#\\/#/#g')
+
+# Primary: extract the backtick-quoted path from the directive
+#   "...ONLY create and modify files under `<path>/`..."
+ACTIVE_PATH=$(echo "$NORM_INPUT" | grep -o 'create and modify files under `[^`]*`' | head -1 | sed 's/.*`\([^`]*\)`/\1/')
+
+# Fallback: legacy packages/<node>/ layout
+if [ -z "$ACTIVE_PATH" ]; then
+  ACTIVE_PATH=$(echo "$NORM_INPUT" | grep -o 'packages/[a-zA-Z0-9_-]*' | head -1)
 fi
+
+[ -z "$ACTIVE_PATH" ] && exit 0
+ACTIVE_PATH="${ACTIVE_PATH%/}"
+
+mkdir -p .claude/modular-dev-state 2>/dev/null
+printf '{"role":"dev","active_path":"%s"}\n' "$ACTIVE_PATH" > ".claude/modular-dev-state/$SESSION_ID.json"
 
 exit 0
