@@ -104,8 +104,8 @@ The test-writer returns:
 1. If the test-writer reports assumptions: present them to the user for confirmation. If the user disagrees, have the test-writer revise.
 2. If the test-writer reports coverage gaps: present them to the user. The user may clarify the spec (re-enter ANALYZE) or accept the gap.
 3. Once confirmed, update `graph.json`: set the contract status to `tested` and record the test file path.
-4. Commit the test files, scoping the commit to `tests/` so it captures only test files regardless of anything else in the index:
-   `git commit --only --no-verify -m "[modular-dev] tests: edge tests for <node-id> contracts" -- tests/`
+4. Stage and commit the test files, scoped to `tests/` so only test files are captured (stage first so newly created test files are included; `--only` ignores anything else staged):
+   `git add -- tests/ && git commit --only --no-verify -m "[modular-dev] tests: edge tests for <node-id> contracts" -- tests/`
 
 The tests are now written and committed. The dev agent in the next phase will NOT be given access to these files.
 
@@ -220,10 +220,10 @@ Present the zone manager's diagnosis to the user with options:
 
 Each completed node is one logical unit — one commit. Do not split a node's changes across multiple commits, and do not bundle multiple nodes into one commit.
 
-Always scope commits to an explicit pathspec with `git commit --only -- <paths>`. This captures ONLY the named paths into the commit, ignoring anything else that happens to be staged — so a concurrent bus session sharing the repo can never fold its files into this commit, and there is no separate `git add` step to race on the index.
+Always scope commits to an explicit pathspec: stage the node's paths with `git add -- <paths>` (so newly created files are included — `--only` alone will NOT pick up untracked files), then commit that same pathspec with `git commit --only -- <paths>`. The `--only` flag captures ONLY the named paths, ignoring anything else that happens to be staged, so a concurrent bus session sharing the repo can never fold its files into this commit.
 
-1. Commit the node's implementation, scoped to its directory (the node's `path` from `graph.json`):
-   `git commit --only --no-verify -m "[modular-dev] <node-id>: <one-line summary from dev agent>" -- <node-path>/`
+1. Stage and commit the node's implementation, scoped to its directory (the node's `path` from `graph.json`). Stage first so new files are included, then commit only that pathspec:
+   `git add -- <node-path>/ && git commit --only --no-verify -m "[modular-dev] <node-id>: <one-line summary from dev agent>" -- <node-path>/`
    - Do NOT include `Co-authored-by` lines in commit messages. A PostToolUse hook automatically strips them if they appear.
    - If git reports "nothing to commit" for that path, the dev agent made no changes — investigate before continuing rather than committing unrelated files.
 2. VERIFY the commit captured only the intended files:
@@ -234,8 +234,8 @@ Always scope commits to an explicit pathspec with `git commit --only -- <paths>`
    - Read the contract type signatures
    - Check that every method claimed in the overview exists in the contracts
    - Write the updated overview to `overviews/nodes/<node-id>.md`
-5. Commit meta changes as a separate logical unit, also pathspec-scoped:
-   `git commit --only --no-verify -m "[modular-dev] meta: update graph and overview for <node-id>" -- graph.json overviews/`
+5. Stage and commit meta changes as a separate logical unit, also pathspec-scoped (stage first so new overview files are included):
+   `git add -- graph.json overviews/ && git commit --only --no-verify -m "[modular-dev] meta: update graph and overview for <node-id>" -- graph.json overviews/`
 6. Update the work queue: set this item's status to `done`
 7. Report to user:
 

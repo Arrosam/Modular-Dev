@@ -53,7 +53,7 @@ IDLE → ANALYZE → WRITE TESTS → DEVELOP → RUN TESTS → COMMIT → IDLE
 ## Step: COMMIT
 
 On pass:
-1. Commit changes scoped to an explicit pathspec — `git commit --only -- <node-path>/` (the `path` from `graph.json`) — so only the node's files enter the commit even if another session has unrelated changes staged. Message: `[modular-dev] <node-id>: <one-line summary>`
+1. Stage the node's paths (`git add -- <node-path>/`, so newly created files are included) then commit scoped to that pathspec — `git commit --only -- <node-path>/` (the `path` from `graph.json`) — so only the node's files enter the commit even if another session has unrelated changes staged. Message: `[modular-dev] <node-id>: <one-line summary>`
 2. Verify with `git show --name-only --format= HEAD` that every committed path is under `<node-path>/`; if not, the commit is contaminated — stop and correct it
 3. Update the node's status in `graph.json` to `done`
 4. Update the node's overview file with the dev agent's proposed update (after validation)
