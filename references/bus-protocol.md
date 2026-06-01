@@ -39,7 +39,7 @@ IDLE → SELECT WAVE → ANALYZE → WRITE TESTS ──┐ (parallel per node)
 ## Step: WRITE TESTS (parallel across a wave)
 
 1. For each node in the wave, check if edge tests already exist for its contracts and are current
-2. Spawn one test-writer subagent per node that needs tests, in parallel (test-writers don't modify code and aren't write-isolated, so they're safe to run concurrently); defined in `agents/test-writer.md`
+2. Deduplicate by contract first: a test file is per-contract (`tests/<contract-id>.test.*`), and wave nodes can share a contract, so assign each distinct test file to exactly ONE writer before fan-out (else two writers clobber the same file). Then spawn the test-writers in parallel — typically one per node when contracts are disjoint, but a shared contract goes to a single writer; defined in `agents/test-writer.md`
 3. Pass each: the refined spec, node overview, and full contract definitions
 4. The test-writer produces tests using four techniques: positive (equivalence partitioning), BVA, state transition, and error guessing (negative tests)
 5. Receive from each: test files, test count summary, assumptions, coverage gaps
@@ -63,7 +63,7 @@ Each dev agent runs in its **own sparse git worktree** under `.mdwt/<node-id>/`,
    - The node's overview file content
    - The contract definitions (file contents from contracts/<id>/)
    - The shared module paths
-   - Instruction (verbatim, with that node's actual `path` from `graph.json` in backticks): "You may ONLY create and modify files under `<node-path>/`. You may read contracts/ and shared/ but not modify them. Do not read or access the tests/ directory." The isolation hook reads the node path from between the backticks and adds it to the session's active-path set.
+   - Instruction (verbatim, with the WORKTREE-QUALIFIED path `.mdwt/<node-id>/<node-path>/` in backticks — NOT the bare node path): "You may ONLY create and modify files under `.mdwt/<node-id>/<node-path>/`. You may read contracts/ and shared/ but not modify them. Do not read or access the tests/ directory." The isolation hook reads the path from between the backticks and adds it to the session's active-path set; qualifying it to the worktree means a stray write to the main-tree copy is blocked, so unverified changes can't bypass the in-worktree test gate.
 3. Receive from each: completion message with a summary of changes made, and a proposed overview update
 4. BARRIER: wait for all agents to return (git is blocked while any dev agent is active).
 5. VERIFY EACH NODE IN ITS WORKTREE, before merging back — this is the fault-isolation gate. For each node, reveal its tests in the worktree (the agent is gone), run the node's edge tests there, then act on the result:

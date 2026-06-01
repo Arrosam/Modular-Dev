@@ -25,9 +25,9 @@ DONE_PATH=$(echo "$NORM_INPUT" | grep -o 'create and modify files under `[^`]*`'
 DONE_PATH="${DONE_PATH%/}"
 
 if [ -n "$DONE_PATH" ]; then
-  # Remove just this agent's marker.
+  # Remove just this agent's marker (same "m-" prefix pre-agent.sh wrote).
   SAN=$(echo "$DONE_PATH" | sed 's#[^A-Za-z0-9._-]#_#g')
-  rm -f "$PATHS_DIR/$SAN.path" 2>/dev/null
+  rm -f "$PATHS_DIR/m-$SAN.path" 2>/dev/null
 else
   # Could not identify which agent finished. If exactly one is active, it must be
   # this one — safe to clear. If several are active we cannot tell which returned,

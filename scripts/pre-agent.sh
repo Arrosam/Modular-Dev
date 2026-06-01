@@ -34,9 +34,12 @@ ACTIVE_PATH="${ACTIVE_PATH%/}"
 
 # Add a marker file for this path. Sanitized filename keeps it unique per path;
 # the file content carries the true path. Distinct filenames → no cross-agent race.
+# The "m-" prefix guarantees the filename is never a dotfile (an active path may be
+# worktree-qualified, e.g. ".mdwt/<id>/<node-path>", which would otherwise sanitize
+# to a leading-dot name that the guards' *.path globs silently skip).
 PATHS_DIR=".claude/modular-dev-state/$SESSION_ID/paths"
 SAN=$(echo "$ACTIVE_PATH" | sed 's#[^A-Za-z0-9._-]#_#g')
 mkdir -p "$PATHS_DIR" 2>/dev/null
-printf '%s\n' "$ACTIVE_PATH" > "$PATHS_DIR/$SAN.path"
+printf '%s\n' "$ACTIVE_PATH" > "$PATHS_DIR/m-$SAN.path"
 
 exit 0

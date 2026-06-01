@@ -74,7 +74,13 @@ If the zone manager reports issues, pause and present them to the user.
 
 Before any implementation begins, write comprehensive edge tests for EVERY node in the wave. This ensures each dev agent is measured against tests it has never seen.
 
-Test-writers do not modify code and are not write-isolated, so they are safe to run concurrently. **Spawn one test-writer per node in the wave in parallel** — issue all the Agent tool calls in a single message so they run at the same time. For each node, first check whether tests already exist for its contracts (look at the test paths in `graph.json`); skip nodes whose tests exist and whose contracts haven't changed.
+Test-writers do not modify code and are not write-isolated, so they are safe to run concurrently — **except that no two writers may target the same test file**. A test file is per-contract (`tests/<contract-id>.test.*` in `graph.json`), and two nodes in the wave can share a contract (or sit in a contract cycle). If you naively spawn one writer per node, two writers can both decide the shared contract's test is missing and write the same path at once, clobbering each other.
+
+So before fan-out, **deduplicate by contract**: build the set of distinct contract test files the wave needs, skipping any whose tests already exist and whose contract hasn't changed. Assign each remaining test file to exactly ONE writer. Concretely:
+- If wave nodes have disjoint contracts, one test-writer per node is fine (the common case).
+- If two or more nodes share a contract, do NOT give that contract to multiple writers. Either fold the shared contract's tests into a single writer covering it (and tell the other writer to skip that file), or write the shared contract's tests in a separate, serialized step before the rest fan out.
+
+**Spawn the test-writers in parallel** — issue the Agent tool calls in a single message — once you have ensured each targeted test file is owned by a single writer.
 
 Use this prompt for each test-writer (defined in `agents/test-writer.md` in the plugin directory):
 
@@ -146,7 +152,7 @@ The worktree shares the repo's object store but has its own index and working di
 
 ### Step 2 — Spawn all dev agents in parallel, each rooted in its worktree
 
-**Spawn all dev agents for the wave in parallel** — issue one Agent tool call per node in a single message. Each dev agent's prompt MUST instruct it to work inside its worktree directory `.mdwt/<node-id>/` and include the canonical isolation directive verbatim, with that node's actual path wrapped in backticks. The backtick path is still required: the active-path hooks read it and add it to this session's active set (`.claude/modular-dev-state/<session-id>/paths/`) as defense-in-depth, and a matching PostToolUse hook removes it when the agent returns.
+**Spawn all dev agents for the wave in parallel** — issue one Agent tool call per node in a single message. Each dev agent's prompt MUST instruct it to work inside its worktree directory `.mdwt/<node-id>/` and include the canonical isolation directive verbatim, with the **worktree-qualified** node path wrapped in backticks — i.e. `.mdwt/<node-id>/<node-path>/`, NOT the bare `<node-path>/`. This matters: the active-path hooks read the backtick path and only allow writes under it, so qualifying it to the worktree means a stray write to the main-tree copy of `<node-path>/` is BLOCKED. That keeps any unverified change inside the worktree until it passes the in-worktree test gate — the bare path would let an agent write straight into the main tree and bypass the gate. A matching PostToolUse hook removes the marker when the agent returns.
 
 Spawn the dev agent subagent (defined in `agents/developer.md` in the plugin directory). For each node, construct the prompt by assembling:
 
@@ -156,8 +162,8 @@ Spawn the dev agent subagent (defined in `agents/developer.md` in the plugin dir
 4. The contract definition files (read from `contracts/<id>/`)
 5. Information about available shared modules
 
-Each dev agent prompt must include this isolation directive, using that node's actual `path` from `graph.json`:
-"You may ONLY create and modify files under `<node-path>/`. You may READ files in `contracts/` and `shared/` but must NOT modify them. You must NOT read or access the `tests/` directory. If you find that the contract interface is insufficient for your implementation, STOP and report what's missing — do not modify contracts yourself. You may ONLY import interfaces already declared in your contracts (`implements_contracts` and `depends_on_contracts`). Do NOT add new hard imports or dependencies — if you need new functionality, STOP and report what you need so the dependency can be evaluated."
+Each dev agent prompt must include this isolation directive, using that node's worktree-qualified path (`.mdwt/<node-id>/` + the node's `path` from `graph.json`):
+"You may ONLY create and modify files under `.mdwt/<node-id>/<node-path>/`. You may READ files in `.mdwt/<node-id>/contracts/` and `.mdwt/<node-id>/shared/` but must NOT modify them. You must NOT read or access the `tests/` directory. If you find that the contract interface is insufficient for your implementation, STOP and report what's missing — do not modify contracts yourself. You may ONLY import interfaces already declared in your contracts (`implements_contracts` and `depends_on_contracts`). Do NOT add new hard imports or dependencies — if you need new functionality, STOP and report what you need so the dependency can be evaluated."
 
 Each dev agent returns:
 - A summary of what it implemented
@@ -166,7 +172,13 @@ Each dev agent returns:
 
 ### Step 3 — Verify each node IN ITS WORKTREE, before merging back (barrier)
 
-Wait for ALL dev agents to return. (You cannot run git while any dev agent is active — the active-path hooks block git until the set empties — so this step happens after every agent has finished.)
+Wait for ALL dev agents to return, then **explicitly clear this session's active-path set** so git is unblocked for the rest of the wave:
+
+```bash
+rm -f .claude/modular-dev-state/$CLAUDE_SESSION_ID/paths/*.path 2>/dev/null
+```
+
+The PostToolUse hook normally removes each agent's marker as it returns, but it recovers the path from an undocumented field of the completion payload — so don't depend on it. Clearing the set yourself here is authoritative: the wave is done, you know it, and `rm` is not blocked by the git guard. (If you don't know the session id, the SessionStart sweep and the marker prune will reclaim it later; clearing now just avoids a wedge where leftover markers keep the session in dev mode and block the bus's own `git commit` and the test agent's reads of `.mdwt/<id>/tests/`.)
 
 Each node is tested **inside its own worktree first**, while still quarantined from the main tree. This is the key to fault isolation: if a node's edge tests fail, the failure points at exactly that node, and its broken code never touches your local working tree or the other nodes. Only nodes that pass their tests in isolation are merged back.
 
@@ -256,7 +268,7 @@ Current node overview:
 Contract definitions:
 <contract contents>
 
-Fix the implementation to pass these tests. Work entirely inside the directory `.mdwt/<node-id>/`. Same isolation rules apply: You may ONLY create and modify files under `<node-path>/` (the node's path from graph.json).
+Fix the implementation to pass these tests. Work entirely inside the directory `.mdwt/<node-id>/`. Same isolation rules apply: You may ONLY create and modify files under `.mdwt/<node-id>/<node-path>/` (the worktree-qualified node path).
 ```
 
 The retry dev agent works in the node's existing worktree, where its previous (failing) implementation still lives — so it fixes in place, still quarantined from the main tree and from `tests/`. The backtick-wrapped path is required: the isolation hook reads the node path from between the backticks to scope this retried dev agent.
