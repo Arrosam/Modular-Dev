@@ -1,7 +1,7 @@
 {
   "name": "modular-dev",
-  "version": "0.1.7",
-  "description": "Divide-and-conquer development pattern. Decomposes complex projects into independent package nodes connected by contract interfaces. A bus agent orchestrates sequential BFS development through zone managers, dev agents, and test agents.",
+  "version": "0.1.8",
+  "description": "Divide-and-conquer development pattern. Decomposes complex projects into independent package nodes connected by contract interfaces. A bus agent orchestrates parallel, contract-isolated development through zone managers, dev agents, and test agents.",
   "author": {
     "name": "Arrosin"
   },

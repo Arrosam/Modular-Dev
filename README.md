@@ -2,7 +2,7 @@
 
 **A Claude Code plugin that tames complex projects by breaking them into small, agent-manageable pieces.**
 
-AI coding agents are powerful on small, focused tasks — but they fall apart on large codebases. Context windows overflow, changes ripple unpredictably, and one bad edit in module A breaks modules B through Z. **modular-dev** solves this by decomposing your project into independent packages that agents develop one at a time, in isolation, with contract-driven testing.
+AI coding agents are powerful on small, focused tasks — but they fall apart on large codebases. Context windows overflow, changes ripple unpredictably, and one bad edit in module A breaks modules B through Z. **modular-dev** solves this by decomposing your project into independent packages that agents develop in isolation, with contract-driven testing. Independent packages are built concurrently — in waves — while each agent stays confined to its own package.
 
 ---
 
@@ -14,13 +14,13 @@ You: "Add user authentication with OAuth support"
 modular-dev:
   1. Reads the project dependency graph
   2. Routes to the relevant zone manager → analyzes which packages need changes
-  3. Writes edge tests from contract definitions (before any code exists)
-  4. Spawns an isolated dev agent for each package (can't see tests or other packages)
-  5. Runs tests → passes → commits by logical unit
-  6. Moves to next package in BFS order → repeats until done
+  3. Writes edge tests from contract definitions, in parallel, for every package in the wave (before any code exists)
+  4. Once all tests are committed, spawns an isolated dev agent per package concurrently (each can't see tests or other packages)
+  5. Runs tests → passes → commits by logical unit (one package = one commit)
+  6. Moves to the next wave of ready packages → repeats until done
 ```
 
-You describe what you want. The plugin handles decomposition, test writing, isolated development, verification, and commits — fully automated, one package at a time.
+You describe what you want. The plugin handles decomposition, test writing, isolated development, verification, and commits — fully automated, building independent packages in parallel waves.
 
 ## The problem
 
@@ -68,7 +68,7 @@ Each package is developed by an isolated agent that can only see:
    ▼
 ┌──────────────────────────────────────────────┐
 │              Bus Agent (main session)         │
-│  Sequential BFS: Analyze → Test → Dev → Run  │
+│  Wave loop: Analyze → Test ∥ → Dev ∥ → Run ∥ │
 └──┬──────────┬──────────┬──────────┬──────────┘
    │ spawn    │ spawn    │ spawn    │ spawn
    ▼          ▼          ▼          ▼
@@ -87,7 +87,7 @@ Each package is developed by an isolated agent that can only see:
 - **Dev Agent**: implements exactly one package. Isolated via hooks. If the contract is insufficient, it stops and escalates rather than working around it.
 - **Test Runner**: executes edge tests. Cannot modify any file.
 
-All agents run **sequentially** — one at a time, zero parallelism, zero merge conflicts.
+**Independent packages run in parallel waves.** Because dev agents code only against locked contract interfaces — never another package's code — packages whose contracts are ready have no development-time coupling and are built concurrently. The hooks confine each concurrent agent to its own package, and commits stay sequential and pathspec-scoped (one package = one commit), so parallelism never causes cross-package contamination or merge conflicts.
 
 ## Install
 

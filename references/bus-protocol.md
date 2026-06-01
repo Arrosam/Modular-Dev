@@ -4,12 +4,21 @@ The bus agent is the main Claude Code session. It does not understand project in
 
 ## State machine
 
+Each cycle processes one **wave** — a set of independent nodes (contracts locked, dependencies done) built concurrently. WRITE TESTS and DEVELOP fan out across the wave; a barrier between them ensures all tests are committed before any development starts. RUN TESTS fans out too; COMMIT is sequential (one node per commit).
+
 ```
-IDLE → ANALYZE → WRITE TESTS → DEVELOP → RUN TESTS → COMMIT → IDLE
-                                  ↑                       |
-                                  └──── RETRY ←───────────┘ (on test fail, max 3)
-                                                          |
-                                                ESCALATE ←┘ (after 3 failures)
+IDLE → SELECT WAVE → ANALYZE → WRITE TESTS ──┐ (parallel per node)
+                                              │
+                                          [BARRIER: all tests committed]
+                                              │
+                                              ▼
+                        ┌──────────────── DEVELOP (parallel per node)
+                        │                     │
+                        │                     ▼
+              RETRY (per node, ←──────── RUN TESTS (parallel per node)
+              max 3, else ESCALATE)          │ (per-node pass)
+                                              ▼
+                                       COMMIT (sequential) → next wave / IDLE
 ```
 
 ## Step: ANALYZE
@@ -21,43 +30,45 @@ IDLE → ANALYZE → WRITE TESTS → DEVELOP → RUN TESTS → COMMIT → IDLE
 5. If the zone manager reports cross-zone impact: spawn the affected zone's manager next, pass the first manager's output as context, collect refined cross-zone spec
 6. If the zone manager reports ambiguity that cannot be resolved: pause and ask the user
 
-## Step: WRITE TESTS
+## Step: WRITE TESTS (parallel across a wave)
 
-1. Check if edge tests already exist for this node's contracts and are current
-2. If tests are needed, spawn the test-writer subagent (defined in `agents/test-writer.md`)
-3. Pass: the refined spec, node overview, and full contract definitions
+1. For each node in the wave, check if edge tests already exist for its contracts and are current
+2. Spawn one test-writer subagent per node that needs tests, in parallel (test-writers don't modify code and aren't write-isolated, so they're safe to run concurrently); defined in `agents/test-writer.md`
+3. Pass each: the refined spec, node overview, and full contract definitions
 4. The test-writer produces tests using four techniques: positive (equivalence partitioning), BVA, state transition, and error guessing (negative tests)
-5. Receive: test files, test count summary, assumptions, coverage gaps
+5. Receive from each: test files, test count summary, assumptions, coverage gaps
 6. If assumptions need confirmation: present to user
-7. Commit test files separately before development begins
-8. These tests are invisible to the dev agent — this is a hard architectural constraint
+7. BARRIER: wait for every node's tests to be written, then commit them (one node per commit, sequentially) before any development begins
+8. These tests are invisible to the dev agents — this is a hard architectural constraint
 
-## Step: DEVELOP
+## Step: DEVELOP (parallel across a wave)
 
-1. Spawn the dev agent subagent
-2. Pass to the dev agent:
+A "wave" is a set of nodes whose contracts are already locked/tested and whose node dependencies are `done` — they are independent at development time (dev agents code only against locked contract interfaces, never other nodes' code) and can be built concurrently.
+
+1. Spawn one dev agent subagent per node in the wave, in parallel (one Agent call per node in a single message)
+2. Pass to each dev agent:
    - The refined spec from ANALYZE
    - The node's overview file content
    - The contract definitions (file contents from contracts/<id>/)
    - The shared module paths
-   - Instruction (verbatim, with the node's actual `path` from `graph.json` in backticks): "You may ONLY create and modify files under `<node-path>/`. You may read contracts/ and shared/ but not modify them. Do not read or access the tests/ directory." The isolation hook reads the node path from between the backticks.
-3. Receive: completion message with a summary of changes made, and a proposed overview update
+   - Instruction (verbatim, with that node's actual `path` from `graph.json` in backticks): "You may ONLY create and modify files under `<node-path>/`. You may read contracts/ and shared/ but not modify them. Do not read or access the tests/ directory." The isolation hook reads the node path from between the backticks and adds it to the session's active-path set.
+3. Receive from each: completion message with a summary of changes made, and a proposed overview update
 
-## Step: RUN TESTS
+## Step: RUN TESTS (parallel across a wave)
 
-1. Spawn the test agent subagent
-2. Pass: the contract ID(s) to test, the test file paths from graph.json
-3. The test agent runs the relevant edge tests
-4. Receive: pass/fail results with details
+1. Spawn one test agent subagent per node in the wave, in parallel (the tester is read-only — cannot edit/write/spawn — so concurrent runs are safe)
+2. Pass each: the contract ID(s) to test, the test file paths from graph.json
+3. The test agents run the relevant edge tests
+4. Receive: pass/fail results per node, evaluated independently
 
-## Step: COMMIT
+## Step: COMMIT (sequential, one node at a time)
 
-On pass:
-1. Stage the node's paths (`git add -- <node-path>/`, so newly created files are included) then commit scoped to that pathspec — `git commit --only -- <node-path>/` (the `path` from `graph.json`) — so only the node's files enter the commit even if another session has unrelated changes staged. Message: `[modular-dev] <node-id>: <one-line summary>`
+Commit each passing node separately, even though the wave developed in parallel:
+1. Stage the node's paths (`git add -- <node-path>/`, so newly created files are included) then commit scoped to that pathspec — `git commit --only -- <node-path>/` (the `path` from `graph.json`) — so only the node's files enter the commit even though sibling nodes' changes sit unstaged in the working tree (or another session shares the repo). Message: `[modular-dev] <node-id>: <one-line summary>`
 2. Verify with `git show --name-only --format= HEAD` that every committed path is under `<node-path>/`; if not, the commit is contaminated — stop and correct it
 3. Update the node's status in `graph.json` to `done`
 4. Update the node's overview file with the dev agent's proposed update (after validation)
-5. Return to IDLE or pick the next node in the BFS queue
+5. Repeat for each passing node in the wave, then pick the next wave from the BFS queue (or return to IDLE)
 
 On fail (retry ≤ 3):
 1. Pass the test failure details back to the dev agent (new spawn) along with the original spec
@@ -110,24 +121,26 @@ All inter-agent communication goes through the bus as natural language in the su
 
 ## Hook-based state management
 
-Isolation state is owned entirely by the hooks and is **per session**, stored at `.claude/modular-dev-state/<session_id>.json`:
+Isolation state is owned entirely by the hooks and is **per session**. Because a session may run several dev agents at once (a wave), the state is a **set of active node paths**, not a single cell. It is stored as a directory of marker files — one file per concurrently-active dev agent:
 
-```json
-{"role": "bus", "active_path": null}                   // normal mode — no restrictions
-{"role": "dev", "active_path": "krakey/engines/auth"}  // dev mode — hooks enforce isolation
+```
+.claude/modular-dev-state/<session_id>/paths/<sanitized-path>.path   // each file's content = one active node path
 ```
 
-Keying state by `session_id` (read from the hook payload on stdin) means concurrent bus sessions on the same repo each have their own state cell and cannot clobber or block one another.
+- **Empty / no directory** → bus mode, no restrictions.
+- **One or more marker files** → dev mode; a write/read is allowed if it falls under ANY active node path.
+
+Using one file per path (rather than a shared JSON array) means concurrent PreToolUse/PostToolUse hooks for different dev agents touch different filenames and never race on a read-modify-write. Keying by `session_id` (read from the hook payload on stdin) means concurrent bus sessions on the same repo each have their own state directory and cannot clobber or block one another.
 
 State transitions:
-1. **SessionStart hook** → ensures the state directory exists, retires the legacy single-cell `.claude/modular-dev-state.json`, and prunes stale per-session files
-2. **PreToolUse Agent hook** → on a dev-agent spawn (detected by the isolation directive), extracts the node path from the directive and writes dev mode for this session
-3. **PreToolUse Write/Read/Bash hooks** → read this session's state, block forbidden operations in dev mode
-4. **PostToolUse Agent hook** → resets this session to bus mode after the subagent returns
+1. **SessionStart hook** → ensures the state root exists, retires legacy single-cell state (`.claude/modular-dev-state.json` and per-session `*.json`), prunes stale `*.path` markers and empty session dirs
+2. **PreToolUse Agent hook** → on a dev-agent spawn (detected by the isolation directive), extracts that node's path and ADDS a marker to this session's active set
+3. **PreToolUse Write/Read/Bash hooks** → read this session's active set; in dev mode, block writes/reads outside every active path, block reads of `tests/` and other nodes, block git
+4. **PostToolUse Agent hook** → removes only the finishing agent's path from the set (recovered from the completed Agent call's directive); when the set empties, the session returns to bus mode
 
-The bus does NOT write the state file itself — it only needs to include the canonical isolation directive (with the node path in backticks) in the dev-agent prompt. The hooks do the rest.
+The bus does NOT write state itself — it only includes the canonical isolation directive (with the node path in backticks) in each dev-agent prompt. The hooks do the rest.
 
-The hooks provide hard enforcement — even if the dev agent's prompt-level isolation is ignored, the hooks will block forbidden tool calls with exit code 2. They **fail open**: if a hook cannot identify the session, it allows the operation rather than wedging, so a misidentified session degrades to prompt-level isolation only.
+The hooks provide hard enforcement — even if a dev agent's prompt-level isolation is ignored, the hooks block forbidden tool calls with exit code 2. They **fail open**: if a hook cannot identify the session (or, in PostToolUse, cannot tell which of several concurrent agents finished), it errs toward allowing / leaving state intact rather than wedging, so a misidentified session degrades to prompt-level isolation only.
 
 ## Escalation chain
 

@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# PreToolUse Agent: Set dev isolation state when a dev agent is spawned
-# Detects the isolation directive in the prompt and records the active node
-# path in a per-session state file: .claude/modular-dev-state/<session_id>.json
+# PreToolUse Agent: Add this dev agent's node path to the session's active set.
+# Supports MULTIPLE dev agents running concurrently in one bus session: the
+# active set is a directory of marker files (one per node path), so concurrent
+# pre-agent hooks never race on a shared cell.
+#   State: .claude/modular-dev-state/<session_id>/paths/<sanitized>.path
+#          (file content = the raw node path; a non-empty dir means dev mode)
 # FAIL-OPEN: any error → allow
 trap 'exit 0' ERR
 
@@ -29,7 +32,11 @@ fi
 [ -z "$ACTIVE_PATH" ] && exit 0
 ACTIVE_PATH="${ACTIVE_PATH%/}"
 
-mkdir -p .claude/modular-dev-state 2>/dev/null
-printf '{"role":"dev","active_path":"%s"}\n' "$ACTIVE_PATH" > ".claude/modular-dev-state/$SESSION_ID.json"
+# Add a marker file for this path. Sanitized filename keeps it unique per path;
+# the file content carries the true path. Distinct filenames → no cross-agent race.
+PATHS_DIR=".claude/modular-dev-state/$SESSION_ID/paths"
+SAN=$(echo "$ACTIVE_PATH" | sed 's#[^A-Za-z0-9._-]#_#g')
+mkdir -p "$PATHS_DIR" 2>/dev/null
+printf '%s\n' "$ACTIVE_PATH" > "$PATHS_DIR/$SAN.path"
 
 exit 0

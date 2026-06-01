@@ -6,12 +6,16 @@ trap 'exit 0' ERR
 GRAPH_FILE="graph.json"
 [ ! -f "$GRAPH_FILE" ] && exit 0
 
-# Per-session isolation state lives under .claude/modular-dev-state/<session_id>.json
-# (written by the Agent hooks). Ensure the directory exists, retire the legacy
-# single-cell state file, and prune state files left by old sessions.
+# Per-session isolation state lives under .claude/modular-dev-state/<session_id>/
+# (the Agent hooks manage a paths/ subdir holding one marker file per active dev
+# agent). Ensure the root exists, retire the legacy single-cell state files, and
+# prune state left by old sessions.
 mkdir -p .claude/modular-dev-state 2>/dev/null
-rm -f .claude/modular-dev-state.json 2>/dev/null
-find .claude/modular-dev-state -name '*.json' -type f -mtime +1 -delete 2>/dev/null
+rm -f .claude/modular-dev-state.json 2>/dev/null            # legacy single-cell file
+rm -f .claude/modular-dev-state/*.json 2>/dev/null          # legacy per-session files
+# Prune marker files older than a day, then remove any empty session dirs.
+find .claude/modular-dev-state -name '*.path' -type f -mtime +1 -delete 2>/dev/null
+find .claude/modular-dev-state -mindepth 1 -type d -empty -delete 2>/dev/null
 
 # Extract project name (simple grep, no python3)
 PROJECT_NAME=$(grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' "$GRAPH_FILE" | head -1 | grep -o '"[^"]*"$' | tr -d $'"\r')
