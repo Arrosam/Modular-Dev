@@ -4,7 +4,7 @@ The bus agent is the main Claude Code session. It does not understand project in
 
 ## State machine
 
-Each cycle processes one **wave** — a set of independent nodes (contracts locked, dependencies done) built concurrently. WRITE TESTS and DEVELOP fan out across the wave; a barrier between them ensures all tests are committed before any development starts. RUN TESTS fans out too; COMMIT is sequential (one node per commit).
+Each cycle processes one **wave** — a set of independent nodes (contracts locked, dependencies done) built concurrently, each in its own git worktree. WRITE TESTS and DEVELOP fan out across the wave; a barrier between them ensures all tests are committed before any development starts. Each node is then **tested in its own worktree before being merged back** — the fault-isolation gate — so broken code never reaches the main tree and a failure points at one node. Only passing nodes are harvested; COMMIT is sequential (one node per commit).
 
 ```
 IDLE → SELECT WAVE → ANALYZE → WRITE TESTS ──┐ (parallel per node)
@@ -12,11 +12,17 @@ IDLE → SELECT WAVE → ANALYZE → WRITE TESTS ──┐ (parallel per node)
                                           [BARRIER: all tests committed]
                                               │
                                               ▼
-                        ┌──────────────── DEVELOP (parallel per node)
+                        ┌──────────────── DEVELOP (parallel, one worktree per node)
                         │                     │
                         │                     ▼
-              RETRY (per node, ←──────── RUN TESTS (parallel per node)
-              max 3, else ESCALATE)          │ (per-node pass)
+              RETRY (per node, in     VERIFY IN WORKTREE (per node, before merge)
+              its worktree; max 3, ←───── │ (per-node pass gate)
+              else ESCALATE)              ▼
+                                       HARVEST passing nodes → main tree
+                                              │
+                                              ▼
+                                       RUN TESTS (merged-tree confirmation)
+                                              │
                                               ▼
                                        COMMIT (sequential) → next wave / IDLE
 ```
@@ -59,18 +65,25 @@ Each dev agent runs in its **own sparse git worktree** under `.mdwt/<node-id>/`,
    - The shared module paths
    - Instruction (verbatim, with that node's actual `path` from `graph.json` in backticks): "You may ONLY create and modify files under `<node-path>/`. You may read contracts/ and shared/ but not modify them. Do not read or access the tests/ directory." The isolation hook reads the node path from between the backticks and adds it to the session's active-path set.
 3. Receive from each: completion message with a summary of changes made, and a proposed overview update
-4. BARRIER + harvest: once all agents return (git is blocked while any dev agent is active), bring each node's changes into the main tree and tear down its worktree:
+4. BARRIER: wait for all agents to return (git is blocked while any dev agent is active).
+5. VERIFY EACH NODE IN ITS WORKTREE, before merging back — this is the fault-isolation gate. For each node, reveal its tests in the worktree (the agent is gone), run the node's edge tests there, then act on the result:
+   - `git -C .mdwt/<node-id> sparse-checkout add tests`
+   - Spawn the test agent rooted in `.mdwt/<node-id>/`; it runs only this node's edge tests
+   - **Pass** → strip tests back out and harvest (step 6)
+   - **Fail (≤3)** → strip tests (`git -C .mdwt/<node-id> sparse-checkout set --cone <node-path> contracts shared`), re-spawn a dev agent IN THE SAME WORKTREE with the failures, re-reveal tests, re-run. The fault is contained to this node; its broken code never enters the main tree.
+   - **Fail (>3)** → ESCALATE; leave the worktree in place, do NOT harvest.
+6. HARVEST passing nodes only: strip tests, merge into the main tree, tear down the worktree:
+   - `git -C .mdwt/<node-id> sparse-checkout set --cone <node-path> contracts shared`
    - `git -C .mdwt/<node-id> add -A -- <node-path>`
    - `git -C .mdwt/<node-id> diff --cached --binary -- <node-path> > .mdwt/<node-id>.patch`
    - `git apply --binary --whitespace=nowarn .mdwt/<node-id>.patch`
    - `git worktree remove --force .mdwt/<node-id>` (then delete the patch file)
 
-## Step: RUN TESTS (parallel across a wave)
+## Step: RUN TESTS
 
-1. Spawn one test agent subagent per node in the wave, in parallel (the tester is read-only — cannot edit/write/spawn — so concurrent runs are safe)
-2. Pass each: the contract ID(s) to test, the test file paths from graph.json
-3. The test agents run the relevant edge tests
-4. Receive: pass/fail results per node, evaluated independently
+Tests run twice, both with the read-only test agent:
+1. **Primary gate — in each node's worktree, before merge** (DEVELOP step 5). A failure here pinpoints one node and keeps its broken code out of the main tree. The retry loop lives here.
+2. **Confirmation — in the merged tree, after harvesting**. Spawn one test agent per harvested node, in parallel. A node that passed in isolation but fails here reveals an integration effect of merging, not a node-implementation bug — report it as such.
 
 ## Step: COMMIT (sequential, one node at a time)
 

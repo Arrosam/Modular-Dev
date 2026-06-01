@@ -164,11 +164,30 @@ Each dev agent returns:
 - A proposed overview update (what methods are now exposed, what the node does)
 - Any escalation (contract insufficient, spec ambiguous, etc.)
 
-### Step 3 — Harvest each node's changes into the main working tree (barrier)
+### Step 3 — Verify each node IN ITS WORKTREE, before merging back (barrier)
 
-Wait for ALL dev agents to return. (You cannot run git while any dev agent is active — the active-path hooks block git until the set empties — so harvesting happens here, after every agent has finished.) For each node, bring its changes from the worktree into the main working tree, scoped to the node path, then remove the worktree:
+Wait for ALL dev agents to return. (You cannot run git while any dev agent is active — the active-path hooks block git until the set empties — so this step happens after every agent has finished.)
+
+Each node is tested **inside its own worktree first**, while still quarantined from the main tree. This is the key to fault isolation: if a node's edge tests fail, the failure points at exactly that node, and its broken code never touches your local working tree or the other nodes. Only nodes that pass their tests in isolation are merged back.
+
+The dev agent never saw `tests/` (it wasn't in the worktree). Now that the agent has returned, add the test files to that node's worktree, run the node's edge tests there, then remove the tests again so they can't leak into a retry:
+
+For each node, in its worktree `.mdwt/<node-id>/`:
+
+1. Reveal the node's tests in the worktree (the agent is gone, so this is safe):
+   `git -C .mdwt/<node-id> sparse-checkout add tests`
+2. Spawn the test agent (`agents/tester.md`) **rooted in `.mdwt/<node-id>/`** to run this node's edge tests against the just-written implementation. Pass it the node's contract IDs and test file paths (from `graph.json`). Test agents are read-only and per-node, so run them for all wave nodes in parallel.
+3. Evaluate that node's result:
+   - **Pass** → the node is verified in isolation. Strip tests back out and harvest it into the main tree (Step 4).
+   - **Fail (attempt ≤ 3)** → the fault is isolated to THIS node. Strip the tests back out so the retry dev agent can't see them (`git -C .mdwt/<node-id> sparse-checkout set --cone <node-path> contracts shared`), then re-spawn a dev agent **in the same worktree** with the failure details (see RUN TESTS → Failures). Re-reveal tests and re-run. Other nodes are unaffected.
+   - **Fail (attempt > 3)** → ESCALATE for this node (see RUN TESTS → ESCALATE). Do NOT harvest it; leave its worktree in place for diagnosis.
+
+### Step 4 — Harvest each PASSING node into the main working tree
+
+Only after a node has passed its edge tests in its worktree, strip the tests back out and merge its implementation into the main tree, scoped to the node path, then remove the worktree:
 
 ```bash
+git -C .mdwt/<node-id> sparse-checkout set --cone <node-path> contracts shared   # drop tests/ before harvesting
 git -C .mdwt/<node-id> add -A -- <node-path>
 git -C .mdwt/<node-id> diff --cached --binary -- <node-path> > .mdwt/<node-id>.patch
 git apply --binary --whitespace=nowarn .mdwt/<node-id>.patch     # apply into the main tree
@@ -176,9 +195,9 @@ git worktree remove --force .mdwt/<node-id>
 rm -f .mdwt/<node-id>.patch
 ```
 
-If a node's patch is empty, the dev agent made no changes — investigate before continuing. After harvesting, the main working tree holds each node's changes (unstaged), ready for RUN TESTS and the existing pathspec-scoped COMMIT.
+If a node's patch is empty, the dev agent made no changes — investigate before continuing. After harvesting, the main working tree holds each verified node's changes (unstaged), ready for the pathspec-scoped COMMIT. Because every harvested node already passed its tests in isolation, the post-merge RUN TESTS phase is a confirmation that the merged tree still passes — not the first time failures are discovered.
 
-Collect all dev agents' results, then proceed to RUN TESTS for each node.
+Collect all dev agents' results, then proceed to COMMIT for each verified node (re-running tests in the merged tree first as a final confirmation — see RUN TESTS).
 
 ### Handle dev agent escalation
 
@@ -188,9 +207,14 @@ If the dev agent reports it cannot complete the work:
 - "cannot implement within scope": the node may need splitting — present to user
 - "needs new dependency": the dev agent requires functionality not available through existing contracts or shared modules. Escalate to zone manager to evaluate whether a new contract dependency should be added. Present the zone manager's recommendation to the user for approval. Do NOT re-spawn the dev agent until the dependency is resolved (contract added/updated and locked).
 
-## Phase: RUN TESTS (parallel across the wave)
+## Phase: RUN TESTS
 
-The test agent is read-only (it cannot edit, write, or spawn), so tests for all wave nodes can run concurrently. **Spawn one test agent per node in parallel** (one Agent call per node in a single message), then collect all results. Use this prompt for each (defined in `agents/tester.md` in the plugin directory):
+Tests run at TWO points, both using the read-only test agent (`agents/tester.md`):
+
+1. **In-worktree, per node, BEFORE merge** (DEVELOP Step 3) — the primary gate. Each node is tested in isolation so a failure pinpoints that node and broken code never reaches the main tree. This is where the retry loop below lives.
+2. **In the merged tree, AFTER harvesting** — a confirmation pass that the verified nodes still pass once combined. Spawn one test agent per harvested node (in parallel; they're read-only). If a node that passed in isolation fails here, the cause is an integration effect of merging — report it explicitly rather than blaming the node's implementation.
+
+Use this prompt for each test agent (rooted in the worktree for gate #1, or the main tree for gate #2):
 
 ```
 Run edge tests for node: <node-id>
@@ -207,13 +231,15 @@ Run each test file. Report:
 
 ### Handle test results
 
-Evaluate each node's results independently. A node whose tests all pass proceeds to COMMIT; a node with failures enters its own retry loop below without blocking the others.
+Evaluate each node's results independently. A node whose tests pass in its worktree is harvested (DEVELOP Step 4) and proceeds to COMMIT; a node with failures enters its own retry loop below — in its worktree — without blocking the others.
 
-**All pass**: proceed to COMMIT.
+**All pass**: harvest the node (DEVELOP Step 4), then proceed to COMMIT.
 
 **Failures (attempt ≤ 3)**:
 
-Increment that node's retry counter. Spawn a new dev agent for it with:
+Increment that node's retry counter. The node is still in its worktree, unharvested, so the fault is fully contained. First strip the tests back out of the worktree so the retry agent can't see them:
+`git -C .mdwt/<node-id> sparse-checkout set --cone <node-path> contracts shared`
+Then spawn a new dev agent **in that same worktree** with:
 
 ```
 Your previous implementation of <node-id> failed some edge tests.
@@ -230,12 +256,12 @@ Current node overview:
 Contract definitions:
 <contract contents>
 
-Fix the implementation to pass these tests. Same isolation rules apply: You may ONLY create and modify files under `<node-path>/` (the node's path from graph.json).
+Fix the implementation to pass these tests. Work entirely inside the directory `.mdwt/<node-id>/`. Same isolation rules apply: You may ONLY create and modify files under `<node-path>/` (the node's path from graph.json).
 ```
 
-By retry time the wave's worktrees have been harvested and removed, and the node's current code is in the main working tree. Retries run one node at a time, so the retry dev agent works directly in the main tree (no worktree) — the active-path hooks still confine it to its node. The backtick-wrapped path is required: the isolation hook reads the node path from between the backticks to scope this retried dev agent.
+The retry dev agent works in the node's existing worktree, where its previous (failing) implementation still lives — so it fixes in place, still quarantined from the main tree and from `tests/`. The backtick-wrapped path is required: the isolation hook reads the node path from between the backticks to scope this retried dev agent.
 
-Then re-enter TEST.
+After the retry agent returns, re-reveal the tests (`git -C .mdwt/<node-id> sparse-checkout add tests`) and re-run the test agent in the worktree (DEVELOP Step 3).
 
 **Failures (attempt > 3)**: ESCALATE.
 
@@ -256,10 +282,10 @@ Diagnose:
 Report your diagnosis.
 ```
 
-Present the zone manager's diagnosis to the user with options:
-- "Retry from scratch" → revert node (`git checkout -- <node-path>/`), re-enter DEVELOP
-- "Flag test for review" → mark the test as needing user attention, skip this node
-- "Revise spec" → re-enter ANALYZE with user's revised requirements
+The failing node is still in its worktree, never harvested — so the main tree is clean and nothing needs reverting there. Present the zone manager's diagnosis to the user with options:
+- "Retry from scratch" → reset the node's worktree to a clean checkout (`git -C .mdwt/<node-id> checkout -- <node-path>/` to discard the failed implementation), re-enter DEVELOP for that node
+- "Flag test for review" → mark the test as needing user attention; remove the worktree (`git worktree remove --force .mdwt/<node-id>`) and skip this node — its code is NOT merged
+- "Revise spec" → re-enter ANALYZE with user's revised requirements (keep or reset the worktree as appropriate)
 
 ## Phase: COMMIT (sequential, one node at a time)
 
