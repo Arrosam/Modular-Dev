@@ -126,27 +126,35 @@ Commit test files one node at a time (commits are sequential even though the wri
 
 Only once EVERY node in the wave has its tests written and committed do you move to DEVELOP.
 
-## Phase: DEVELOP (parallel across the wave)
+## Phase: DEVELOP (parallel across the wave, one git worktree per node)
 
-All test files for the wave are committed, so now development for every node in the wave starts together.
+All test files for the wave are committed, so now development for every node in the wave starts together. Each dev agent runs in its **own git worktree** — a checkout containing ONLY the files it needs (its node directory, plus read-only `contracts/` and `shared/`). This is the primary isolation: an agent physically cannot see sibling packages or the `tests/` directory because they aren't in its worktree. The active-path hooks still fire as a second layer of defense.
 
-For each node, read its `path` field from `graph.json` to determine its actual directory (e.g. `krakey/engines/recall`, not necessarily `packages/<node-id>`). You do NOT write any state file yourself — isolation is set up automatically by hooks.
+For each node, read its `path` field from `graph.json` to determine its actual directory (e.g. `krakey/engines/recall`, not necessarily `packages/<node-id>`).
 
-**Spawn all dev agents for the wave in parallel** — issue one Agent tool call per node in a single message. As each dev agent spawns, a PreToolUse hook detects the isolation directive in its prompt, extracts the node path, and ADDS it to this session's active-path set (`.claude/modular-dev-state/<session-id>/paths/`). The set holds one entry per concurrently-active dev agent. A matching PostToolUse hook removes only the finishing agent's path when it returns. Because the set is keyed by session id and tracks every active node, concurrent dev agents each stay scoped to their own node, and concurrent bus sessions never clobber each other.
+### Step 1 — Create one worktree per node
 
-These PreToolUse hooks fire on every tool call any dev agent makes, blocking each agent from:
-- Writing files outside the active node set (each agent can only touch its own node's directory)
-- Reading `tests/` or other nodes' directories
-- Running git commands or accessing tests via bash
+Ensure `.mdwt/` is git-ignored (the setup skill adds it; if missing, append `.mdwt/` to `.gitignore` and commit that first). Then, for each node in the wave, create a sparse worktree that checks out only the node path plus `contracts/` and `shared/`:
 
-For the hooks to engage, each dev agent prompt MUST contain the canonical isolation directive below verbatim, with that node's actual path wrapped in backticks (the hook reads the path from between the backticks). Each agent gets its OWN node's path.
+```bash
+git worktree add --no-checkout --detach .mdwt/<node-id> HEAD
+git -C .mdwt/<node-id> sparse-checkout set --cone <node-path> contracts shared
+git -C .mdwt/<node-id> checkout
+```
+
+The worktree shares the repo's object store but has its own index and working directory, so concurrent agents never collide. (Cone mode also includes top-level files such as `graph.json` and `README.md`; that is harmless — they are not sibling packages or tests.)
+
+### Step 2 — Spawn all dev agents in parallel, each rooted in its worktree
+
+**Spawn all dev agents for the wave in parallel** — issue one Agent tool call per node in a single message. Each dev agent's prompt MUST instruct it to work inside its worktree directory `.mdwt/<node-id>/` and include the canonical isolation directive verbatim, with that node's actual path wrapped in backticks. The backtick path is still required: the active-path hooks read it and add it to this session's active set (`.claude/modular-dev-state/<session-id>/paths/`) as defense-in-depth, and a matching PostToolUse hook removes it when the agent returns.
 
 Spawn the dev agent subagent (defined in `agents/developer.md` in the plugin directory). For each node, construct the prompt by assembling:
 
-1. The refined spec from ANALYZE
-2. The node overview content
-3. The contract definition files (read from `contracts/<id>/`)
-4. Information about available shared modules
+1. The instruction: "Work entirely inside the directory `.mdwt/<node-id>/`. This is your worktree — treat its root as the project root."
+2. The refined spec from ANALYZE
+3. The node overview content
+4. The contract definition files (read from `contracts/<id>/`)
+5. Information about available shared modules
 
 Each dev agent prompt must include this isolation directive, using that node's actual `path` from `graph.json`:
 "You may ONLY create and modify files under `<node-path>/`. You may READ files in `contracts/` and `shared/` but must NOT modify them. You must NOT read or access the `tests/` directory. If you find that the contract interface is insufficient for your implementation, STOP and report what's missing — do not modify contracts yourself. You may ONLY import interfaces already declared in your contracts (`implements_contracts` and `depends_on_contracts`). Do NOT add new hard imports or dependencies — if you need new functionality, STOP and report what you need so the dependency can be evaluated."
@@ -155,6 +163,20 @@ Each dev agent returns:
 - A summary of what it implemented
 - A proposed overview update (what methods are now exposed, what the node does)
 - Any escalation (contract insufficient, spec ambiguous, etc.)
+
+### Step 3 — Harvest each node's changes into the main working tree (barrier)
+
+Wait for ALL dev agents to return. (You cannot run git while any dev agent is active — the active-path hooks block git until the set empties — so harvesting happens here, after every agent has finished.) For each node, bring its changes from the worktree into the main working tree, scoped to the node path, then remove the worktree:
+
+```bash
+git -C .mdwt/<node-id> add -A -- <node-path>
+git -C .mdwt/<node-id> diff --cached --binary -- <node-path> > .mdwt/<node-id>.patch
+git apply --binary --whitespace=nowarn .mdwt/<node-id>.patch     # apply into the main tree
+git worktree remove --force .mdwt/<node-id>
+rm -f .mdwt/<node-id>.patch
+```
+
+If a node's patch is empty, the dev agent made no changes — investigate before continuing. After harvesting, the main working tree holds each node's changes (unstaged), ready for RUN TESTS and the existing pathspec-scoped COMMIT.
 
 Collect all dev agents' results, then proceed to RUN TESTS for each node.
 
@@ -211,7 +233,7 @@ Contract definitions:
 Fix the implementation to pass these tests. Same isolation rules apply: You may ONLY create and modify files under `<node-path>/` (the node's path from graph.json).
 ```
 
-The backtick-wrapped path is required: the isolation hook reads the node path from between the backticks to scope this retried dev agent.
+By retry time the wave's worktrees have been harvested and removed, and the node's current code is in the main working tree. Retries run one node at a time, so the retry dev agent works directly in the main tree (no worktree) — the active-path hooks still confine it to its node. The backtick-wrapped path is required: the isolation hook reads the node path from between the backticks to scope this retried dev agent.
 
 Then re-enter TEST.
 

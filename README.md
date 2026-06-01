@@ -87,7 +87,7 @@ Each package is developed by an isolated agent that can only see:
 - **Dev Agent**: implements exactly one package. Isolated via hooks. If the contract is insufficient, it stops and escalates rather than working around it.
 - **Test Runner**: executes edge tests. Cannot modify any file.
 
-**Independent packages run in parallel waves.** Because dev agents code only against locked contract interfaces — never another package's code — packages whose contracts are ready have no development-time coupling and are built concurrently. The hooks confine each concurrent agent to its own package, and commits stay sequential and pathspec-scoped (one package = one commit), so parallelism never causes cross-package contamination or merge conflicts.
+**Independent packages run in parallel waves.** Because dev agents code only against locked contract interfaces — never another package's code — packages whose contracts are ready have no development-time coupling and are built concurrently. Each concurrent dev agent runs in its **own sparse git worktree** containing only its package plus read-only `contracts/` and `shared/` — so it physically cannot see sibling packages or test files. After the wave finishes, the bus harvests each worktree's changes into the main tree and commits sequentially, pathspec-scoped (one package = one commit). Parallelism never causes cross-package contamination or merge conflicts.
 
 ## Install
 

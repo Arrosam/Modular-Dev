@@ -1,6 +1,6 @@
 {
   "name": "modular-dev",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Divide-and-conquer development pattern. Decomposes complex projects into independent package nodes connected by contract interfaces. A bus agent orchestrates parallel, contract-isolated development through zone managers, dev agents, and test agents.",
   "author": {
     "name": "Arrosin"

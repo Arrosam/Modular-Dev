@@ -41,18 +41,29 @@ IDLE → SELECT WAVE → ANALYZE → WRITE TESTS ──┐ (parallel per node)
 7. BARRIER: wait for every node's tests to be written, then commit them (one node per commit, sequentially) before any development begins
 8. These tests are invisible to the dev agents — this is a hard architectural constraint
 
-## Step: DEVELOP (parallel across a wave)
+## Step: DEVELOP (parallel across a wave, one git worktree per node)
 
 A "wave" is a set of nodes whose contracts are already locked/tested and whose node dependencies are `done` — they are independent at development time (dev agents code only against locked contract interfaces, never other nodes' code) and can be built concurrently.
 
-1. Spawn one dev agent subagent per node in the wave, in parallel (one Agent call per node in a single message)
-2. Pass to each dev agent:
+Each dev agent runs in its **own sparse git worktree** under `.mdwt/<node-id>/`, checked out with only the node directory plus read-only `contracts/` and `shared/` (no sibling packages, no `tests/`). This is the primary isolation — physical, not just advisory. The active-path hooks remain as a second layer.
+
+1. For each node, create a sparse worktree:
+   - `git worktree add --no-checkout --detach .mdwt/<node-id> HEAD`
+   - `git -C .mdwt/<node-id> sparse-checkout set --cone <node-path> contracts shared`
+   - `git -C .mdwt/<node-id> checkout`
+2. Spawn one dev agent subagent per node in the wave, in parallel (one Agent call per node in a single message). Pass to each:
+   - The instruction to work inside its worktree `.mdwt/<node-id>/`
    - The refined spec from ANALYZE
    - The node's overview file content
    - The contract definitions (file contents from contracts/<id>/)
    - The shared module paths
    - Instruction (verbatim, with that node's actual `path` from `graph.json` in backticks): "You may ONLY create and modify files under `<node-path>/`. You may read contracts/ and shared/ but not modify them. Do not read or access the tests/ directory." The isolation hook reads the node path from between the backticks and adds it to the session's active-path set.
 3. Receive from each: completion message with a summary of changes made, and a proposed overview update
+4. BARRIER + harvest: once all agents return (git is blocked while any dev agent is active), bring each node's changes into the main tree and tear down its worktree:
+   - `git -C .mdwt/<node-id> add -A -- <node-path>`
+   - `git -C .mdwt/<node-id> diff --cached --binary -- <node-path> > .mdwt/<node-id>.patch`
+   - `git apply --binary --whitespace=nowarn .mdwt/<node-id>.patch`
+   - `git worktree remove --force .mdwt/<node-id>` (then delete the patch file)
 
 ## Step: RUN TESTS (parallel across a wave)
 
