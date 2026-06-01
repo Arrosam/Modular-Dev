@@ -117,9 +117,10 @@ This is critical — `CLAUDE.md` is what makes the main session automatically fo
 
 The plugin's hooks are automatically loaded by Claude Code from `hooks/hooks.json` — no manual installation needed.
 
-There is no isolation state to initialize by hand: the hooks create and manage it per session under `.claude/modular-dev-state/<session-id>.json`. Just make sure the `.claude` directory exists for queue and state files:
+There is no isolation state to initialize by hand: the hooks create and manage it per session under `.claude/modular-dev-state/<session-id>/` (a set of active-node markers supporting concurrent dev agents). Just make sure the `.claude` directory exists for queue and state files, and that the per-node dev worktree directory `.mdwt/` is git-ignored (the develop phase creates one transient git worktree per node there):
 ```bash
 mkdir -p .claude
+grep -qxF '.mdwt/' .gitignore 2>/dev/null || echo '.mdwt/' >> .gitignore
 ```
 
 ## Step 8: Summary

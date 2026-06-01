@@ -1,7 +1,7 @@
 ---
 name: test-writer
 description: Writes comprehensive edge tests for contract interfaces BEFORE the dev agent implements the node. Tests are based on the contract definition and spec only — the test writer has no knowledge of how the node will be implemented. Invoked by the bus during the WRITE TESTS phase.
-model: sonnet
+model: opus
 disallowedTools: Agent
 ---
 

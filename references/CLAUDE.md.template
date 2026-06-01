@@ -17,12 +17,13 @@ When the user describes any task (feature, bug fix, change), follow this sequenc
    - **What changes are expected for each** — a concise description of the planned modifications per node
    - Ask: "Proceed with this plan?"
    - Do NOT write tests, spawn dev agents, or modify any files until the user explicitly approves.
-5. **Write tests**: For each node to be modified, spawn the test-writer subagent to write edge tests BEFORE development, based on contract definitions only. Skip if tests already exist and contracts haven't changed. Commit test files.
-6. **Develop**: For each node in BFS order, spawn the dev subagent with the canonical isolation directive in its prompt (the node's `path` from `graph.json`, wrapped in backticks). A PreToolUse hook reads that path and sets per-session isolation state automatically — you do NOT write any state file yourself. The dev agent can only modify its assigned package. After it returns, the state resets automatically via hooks.
-7. **Run tests**: Spawn the tester subagent to run edge tests for the modified node's contracts.
-8. **Commit or retry**: If tests pass, commit by logical unit (one node = one commit). If tests fail, retry up to 3 times. After 3 failures, spawn the zone manager to diagnose, then escalate to the user.
-9. **Loop**: Move to the next node in the BFS queue. Repeat steps 5-8 until all nodes are done.
-10. **Report**: Summarize what was completed.
+5. **Select wave**: From the pending queue, pick the set of independent nodes whose contracts are locked/tested and whose node dependencies are `done`. These build concurrently. (Dev agents code only against locked contracts, never other nodes' code, so such nodes are independent at development time. A single-node wave is fine.)
+6. **Write tests (parallel)**: Spawn one test-writer subagent per wave node IN PARALLEL (one Agent call per node in a single message) to write edge tests BEFORE development, based on contract definitions only. Skip nodes whose tests already exist and whose contracts haven't changed. BARRIER: wait for all to finish, then commit test files (one node per commit) before any development begins.
+7. **Develop (parallel, isolated worktrees)**: Once ALL wave tests are committed, create one sparse git worktree per node under `.mdwt/<node-id>/` (checked out with only the node dir plus read-only `contracts/`+`shared/` — no siblings, no `tests/`), then spawn one dev subagent per node IN PARALLEL, each rooted in its worktree and carrying the canonical isolation directive (that node's `path` from `graph.json`, wrapped in backticks). The worktree gives physical isolation; the active-path hook (which reads the backtick path) is a second layer.
+8. **Verify in worktree, THEN merge**: When all agents return, test each node INSIDE its own worktree before merging it back — reveal the tests there (`git -C .mdwt/<id> sparse-checkout add tests`) and run the node's edge tests rooted in the worktree. This is the fault-isolation gate: a failure pinpoints that one node and its broken code never touches your local tree. Only nodes that PASS are harvested into the main tree (`git -C .mdwt/<id> diff --cached --binary -- <path> | git apply`); failing nodes retry in their worktree (up to 3×) and never merge until green. After harvesting, run a confirmation test pass per node in the merged tree. See `references/bus-protocol.md` for exact commands.
+9. **Commit or retry (sequential)**: For each verified node, commit by logical unit (one node = one commit, pathspec-scoped). If a node fails its in-worktree tests, retry that node up to 3 times in its worktree. After 3 failures, spawn the zone manager to diagnose, then escalate to the user — the node is never merged. Other nodes in the wave are unaffected.
+10. **Loop**: Pick the next wave from the BFS queue. Repeat steps 5-9 until all nodes are done.
+11. **Report**: Summarize what was completed.
 
 ## HARD REQUIREMENT: No development without explicit approval
 
@@ -43,6 +44,7 @@ This applies to ALL workflows — whether triggered by slash commands, natural l
 
 ## Isolation rules
 
+- Multiple dev agents may run concurrently (one wave). Each is scoped to its OWN node only — the hooks track the full set of active node paths and confine every agent to its own directory.
 - Dev agents may ONLY modify files under their assigned node directory (the `path` field in `graph.json` for that node — NOT necessarily `packages/<node-id>/`)
 - Dev agents may READ `contracts/` and `shared/` but NOT modify them
 - Dev agents CANNOT read `tests/` or other nodes' directories — hooks enforce this
@@ -62,5 +64,5 @@ This applies to ALL workflows — whether triggered by slash commands, natural l
 
 - `graph.json` — dependency graph, source of truth for nodes, contracts, zones, and status
 - `overviews/` — the ONLY source of project knowledge for manager agents (never read source code for coordination)
-- `.claude/modular-dev-state/<session-id>.json` — per-session isolation state for hooks (the hooks manage this; never write it yourself)
+- `.claude/modular-dev-state/<session-id>/paths/` — per-session active-node set for hooks: one marker file per concurrently-active dev agent (the hooks manage this; never write it yourself). A non-empty set means dev mode; a write/read is allowed if it falls under any active node path.
 - `.claude/modular-dev-queue-<id>.json` — session-specific work queues (multiple may coexist across concurrent sessions)
