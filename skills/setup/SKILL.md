@@ -61,7 +61,7 @@ Once approved, create the following directories and files:
 ```
 <project-root>/
 ├── graph.json
-├── overviews/
+├── overviews/                (gitignored — local-only project knowledge)
 │   ├── project.md
 │   ├── zones/          (empty — populated in step 4)
 │   ├── nodes/<node-id>.md    (one per node)
@@ -117,10 +117,11 @@ This is critical — `CLAUDE.md` is what makes the main session automatically fo
 
 The plugin's hooks are automatically loaded by Claude Code from `hooks/hooks.json` — no manual installation needed.
 
-There is no isolation state to initialize by hand: the hooks create and manage it per session under `.claude/modular-dev-state/<session-id>/` (a set of active-node markers supporting concurrent dev agents). Just make sure the `.claude` directory exists for queue and state files, and that the per-node dev worktree directory `.mdwt/` is git-ignored (the develop phase creates one transient git worktree per node there):
+There is no isolation state to initialize by hand: the hooks create and manage it per session under `.claude/modular-dev-state/<session-id>/` (a set of active-node markers supporting concurrent dev agents). Just make sure the `.claude` directory exists for queue and state files, that the per-node dev worktree directory `.mdwt/` is git-ignored (the develop phase creates one transient git worktree per node there), and that `overviews/` is git-ignored (the bus rewrites overview files on every develop cycle, so they stay local rather than churning git history):
 ```bash
 mkdir -p .claude
 grep -qxF '.mdwt/' .gitignore 2>/dev/null || echo '.mdwt/' >> .gitignore
+grep -qxF 'overviews/' .gitignore 2>/dev/null || echo 'overviews/' >> .gitignore
 ```
 
 ## Step 8: Summary
@@ -130,4 +131,4 @@ Present the user with:
 - The BFS development order (which nodes can be built first)
 - "The project is ready. Describe any task and I'll automatically analyze, plan, develop, test, and commit — no slash commands needed."
 
-Commit the entire skeleton: `init: project skeleton with <N> nodes, <M> contracts`
+Commit the skeleton (`overviews/` is git-ignored and stays local): `init: project skeleton with <N> nodes, <M> contracts`

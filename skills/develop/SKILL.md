@@ -9,17 +9,18 @@ You are the bus agent executing one cycle of the develop loop. You process one *
 
 ## Why nodes can run in parallel
 
-In modular-dev, a dev agent implements a node strictly against **locked contract interfaces** — it never reads or imports another node's code. So any nodes whose contracts are already `locked`/`tested` are independent at development time and safe to build at the same time. Parallelism is bounded by contract readiness, NOT by BFS node ordering. Commits remain sequential and pathspec-scoped (one node = one commit, `git commit --only -- <node-path>/`), so the bus committing node A never sweeps in node B's in-flight changes.
+In modular-dev, a dev agent implements a node strictly against **locked contract interfaces** — it never reads or imports another node's code. So any nodes whose contracts are already `locked`/`tested` are independent at development time and safe to build at the same time. Parallelism is bounded by contract readiness, NOT by BFS node ordering. Commits remain sequential and pathspec-scoped (one node = one commit, `git commit --only -- <node-path>/ graph.json`), so the bus committing node A never sweeps in node B's in-flight changes.
 
 A **wave** is one or more such independent nodes processed together. A single-node wave is just the degenerate case — the loop is identical.
 
 ## Prerequisites
 
 1. Verify `graph.json` exists
-2. Check for queue files matching `.claude/modular-dev-queue-*.json` (also check legacy `.claude/modular-dev-queue.json`). If none exist, tell the user to run `/modular-dev:plan <task>` first.
-3. If multiple queue files have pending items, list them (showing task description and pending count) and ask the user which one to continue. If only one has pending items, use it automatically.
-4. Read the selected queue and find all items with status `pending`
-5. If no pending items exist, report "All work in the current plan is complete" and stop
+2. Ensure `overviews/` is gitignored so overview churn never enters git history (idempotent — appends only if absent): `grep -qxF 'overviews/' .gitignore 2>/dev/null || printf 'overviews/\n' >> .gitignore`
+3. Check for queue files matching `.claude/modular-dev-queue-*.json` (also check legacy `.claude/modular-dev-queue.json`). If none exist, tell the user to run `/modular-dev:plan <task>` first.
+4. If multiple queue files have pending items, list them (showing task description and pending count) and ask the user which one to continue. If only one has pending items, use it automatically.
+5. Read the selected queue and find all items with status `pending`
+6. If no pending items exist, report "All work in the current plan is complete" and stop
 
 ### Select the wave
 
@@ -126,7 +127,7 @@ For each node's result:
 2. If the test-writer reports coverage gaps: present them to the user. The user may clarify the spec (re-enter ANALYZE) or accept the gap.
 3. Once confirmed, update `graph.json`: set the contract status to `tested` and record the test file path.
 4. Stage and commit the test files, scoped to `tests/` so only test files are captured (stage first so newly created test files are included; `--only` ignores anything else staged):
-   `git add -- tests/ && git commit --only --no-verify -m "[modular-dev] tests: edge tests for <node-id> contracts" -- tests/`
+   `git add -- tests/ && git commit --only --no-verify -m "tests: edge tests for <node-id> contracts" -- tests/`
 
 Commit test files one node at a time (commits are sequential even though the writing was parallel). The dev agents in the next phase will NOT be given access to these files.
 
@@ -301,25 +302,24 @@ The failing node is still in its worktree, never harvested — so the main tree 
 
 ## Phase: COMMIT (sequential, one node at a time)
 
-Even though the wave was developed in parallel, commit each node separately and sequentially — one node is one logical unit, one commit. Do not split a node's changes across multiple commits, and do not bundle multiple nodes into one commit. Process the wave's passing nodes one at a time through the steps below.
+Even though the wave was developed in parallel, commit each node separately and sequentially — one develop agent's work is one commit. The node's implementation and its `graph.json` update land together in that single commit; do not split them, and do not bundle multiple nodes into one commit. (Each node's edge tests were already committed once in WRITE TESTS.) Process the wave's passing nodes one at a time through the steps below.
 
 Always scope commits to an explicit pathspec: stage the node's paths with `git add -- <paths>` (so newly created files are included — `--only` alone will NOT pick up untracked files), then commit that same pathspec with `git commit --only -- <paths>`. The `--only` flag captures ONLY the named paths, ignoring anything else that happens to be staged — so even with sibling nodes' changes sitting unstaged in the working tree (or another bus session sharing the repo), this commit contains only this node's files.
 
-1. Stage and commit the node's implementation, scoped to its directory (the node's `path` from `graph.json`). Stage first so new files are included, then commit only that pathspec:
-   `git add -- <node-path>/ && git commit --only --no-verify -m "[modular-dev] <node-id>: <one-line summary from dev agent>" -- <node-path>/`
-   - Do NOT include `Co-authored-by` lines in commit messages. A PostToolUse hook automatically strips them if they appear.
-   - If git reports "nothing to commit" for that path, the dev agent made no changes — investigate before continuing rather than committing unrelated files.
-2. VERIFY the commit captured only the intended files:
-   `git show --name-only --format= HEAD`
-   Every path listed MUST be under `<node-path>/`. If any file outside that pathspec appears, STOP and report it — the commit is contaminated. Correct it (e.g. `git reset --soft HEAD^`, then re-commit with the correct `--only -- <node-path>/` pathspec) before continuing.
-3. Update `graph.json`: set node status to `done`
-4. Validate and apply the dev agent's proposed overview update:
+1. Update `graph.json`: set node status to `done`
+2. Validate and apply the dev agent's proposed overview update:
    - Read the contract type signatures
    - Check that every method claimed in the overview exists in the contracts
    - Write the updated overview to `overviews/nodes/<node-id>.md`
-5. Stage and commit meta changes as a separate logical unit, also pathspec-scoped (stage first so new overview files are included):
-   `git add -- graph.json overviews/ && git commit --only --no-verify -m "[modular-dev] meta: update graph and overview for <node-id>" -- graph.json overviews/`
-6. Update the work queue: set this item's status to `done`
+   - `overviews/` is gitignored, so this update stays local — it is NOT staged or committed.
+3. Stage and commit the node's implementation together with the graph update, scoped to that pathspec. Stage first so new files are included, then commit only those paths:
+   `git add -- <node-path>/ graph.json && git commit --only --no-verify -m "<node-id>: <one-line summary from dev agent>" -- <node-path>/ graph.json`
+   - Do NOT include `Co-authored-by` lines in commit messages. A PostToolUse hook automatically strips them if they appear.
+   - If git reports "nothing to commit" for the node path, the dev agent made no changes — investigate before continuing rather than committing unrelated files.
+4. VERIFY the commit captured only the intended files:
+   `git show --name-only --format= HEAD`
+   Every path listed MUST be under `<node-path>/` or be `graph.json`. If any other file appears, STOP and report it — the commit is contaminated. Correct it (e.g. `git reset --soft HEAD^`, then re-commit with the correct `--only -- <node-path>/ graph.json` pathspec) before continuing.
+5. Update the work queue: set this item's status to `done`
 
 After committing every node in the wave, report the wave to the user:
 

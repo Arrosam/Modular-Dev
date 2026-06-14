@@ -43,7 +43,7 @@ Read the updated `graph.json` and re-run zone partitioning:
 Stage the node's paths first (so newly created files are included), then commit only that pathspec:
 
 ```
-git add -- graph.json overviews/nodes/<node-id>.md <node-path>/ && git commit --only --no-verify -m "[modular-dev] add-node: <node-id>" -- graph.json overviews/nodes/<node-id>.md <node-path>/
+git add -- graph.json <node-path>/ && git commit --only --no-verify -m "add-node: <node-id>" -- graph.json <node-path>/
 ```
 
 Report: "Node `<node-id>` added to zone `<zone-id>`. Run `/modular-dev:plan <task>` to plan its development."

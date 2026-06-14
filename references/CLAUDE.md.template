@@ -36,9 +36,10 @@ This applies to ALL workflows — whether triggered by slash commands, natural l
 
 ## Commit rules
 
-- One commit per logical unit (one node's implementation = one commit, meta updates = separate commit)
-- Scope every commit to an explicit pathspec: stage with `git add -- <node-path>/` (so newly created files are included — `--only` alone skips untracked files), then `git commit --only -- <node-path>/` (and `-- graph.json overviews/` for meta). `--only` keeps the commit clean even when another session shares the repo. Verify with `git show --name-only --format= HEAD`.
-- Commit message format: `[modular-dev] <node-id>: <one-line summary>`
+- Two commits per node: one when its edge tests are written, then one per develop agent covering its implementation plus the `graph.json` update (one node = one develop commit — no separate meta commit)
+- Scope every commit to an explicit pathspec: stage with `git add -- <node-path>/ graph.json` (so newly created files are included — `--only` alone skips untracked files), then `git commit --only -- <node-path>/ graph.json`. `--only` keeps the commit clean even when another session shares the repo. Verify with `git show --name-only --format= HEAD`.
+- `overviews/` is gitignored — overview updates stay local and are never committed
+- Commit message format: `<node-id>: <one-line summary>`
 - Do NOT include `Co-authored-by` lines in commit messages
 - Only the bus commits — dev agents are blocked from git operations by hooks
 

@@ -55,7 +55,7 @@ Set contract status to `tested` in `graph.json`.
 Scope the commit to the contract's own artifacts so a concurrent session's changes can't be folded in. Stage first (so newly created files are included), then commit only that pathspec:
 
 ```
-git add -- graph.json contracts/<contract-id>/ overviews/contracts/<contract-id>.md tests/<contract-id>.test.* && git commit --only --no-verify -m "[modular-dev] add-contract: <contract-id> connecting <node-a> ↔ <node-b>" -- graph.json contracts/<contract-id>/ overviews/contracts/<contract-id>.md tests/<contract-id>.test.*
+git add -- graph.json contracts/<contract-id>/ tests/<contract-id>.test.* && git commit --only --no-verify -m "add-contract: <contract-id> connecting <node-a> ↔ <node-b>" -- graph.json contracts/<contract-id>/ tests/<contract-id>.test.*
 ```
 
 Then verify with `git show --name-only --format= HEAD` that only those paths were committed.
@@ -104,7 +104,7 @@ For each affected node:
 Scope the commit to the contract's own artifacts. Stage first (so newly created files are included), then commit only that pathspec:
 
 ```
-git add -- graph.json contracts/<contract-id>/ overviews/contracts/<contract-id>.md tests/<contract-id>.test.* && git commit --only --no-verify -m "[modular-dev] modify-contract: <contract-id> — <summary of change>" -- graph.json contracts/<contract-id>/ overviews/contracts/<contract-id>.md tests/<contract-id>.test.*
+git add -- graph.json contracts/<contract-id>/ tests/<contract-id>.test.* && git commit --only --no-verify -m "modify-contract: <contract-id> — <summary of change>" -- graph.json contracts/<contract-id>/ tests/<contract-id>.test.*
 ```
 
 Then verify with `git show --name-only --format= HEAD` that only those paths were committed.

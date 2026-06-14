@@ -87,11 +87,11 @@ Tests run twice, both with the read-only test agent:
 
 ## Step: COMMIT (sequential, one node at a time)
 
-Commit each passing node separately, even though the wave developed in parallel:
-1. Stage the node's paths (`git add -- <node-path>/`, so newly created files are included) then commit scoped to that pathspec — `git commit --only -- <node-path>/` (the `path` from `graph.json`) — so only the node's files enter the commit even though sibling nodes' changes sit unstaged in the working tree (or another session shares the repo). Message: `[modular-dev] <node-id>: <one-line summary>`
-2. Verify with `git show --name-only --format= HEAD` that every committed path is under `<node-path>/`; if not, the commit is contaminated — stop and correct it
-3. Update the node's status in `graph.json` to `done`
-4. Update the node's overview file with the dev agent's proposed update (after validation)
+Commit each passing node separately, even though the wave developed in parallel. One develop agent = one commit: the node's implementation and its `graph.json` update go in together; the edge tests were already committed in WRITE TESTS.
+1. Update the node's status in `graph.json` to `done`
+2. Update the node's overview file with the dev agent's proposed update (after validation). `overviews/` is gitignored, so this stays local and is not committed
+3. Stage the node's paths plus the graph (`git add -- <node-path>/ graph.json`, so newly created files are included) then commit scoped to that pathspec — `git commit --only -- <node-path>/ graph.json` — so only this node's files enter the commit even though sibling nodes' changes sit unstaged in the working tree (or another session shares the repo). Message: `<node-id>: <one-line summary>`
+4. Verify with `git show --name-only --format= HEAD` that every committed path is under `<node-path>/` or is `graph.json`; if not, the commit is contaminated — stop and correct it
 5. Repeat for each passing node in the wave, then pick the next wave from the BFS queue (or return to IDLE)
 
 On fail (retry ≤ 3):
