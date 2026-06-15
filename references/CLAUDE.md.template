@@ -13,6 +13,7 @@ When the user describes any task (feature, bug fix, change), follow this sequenc
 2. **Regenerate zone managers**: Ensure `.claude/agents/_zone-*.md` files exist and match `graph.json`. If stale or missing, regenerate them using the template in the modular-dev plugin's `references/bus-protocol.md`.
 3. **Analyze**: Spawn the relevant zone manager subagent to analyze which nodes need modification. If cross-zone impact is reported, spawn affected zone managers sequentially. If ambiguity exists, ask the user — do not guess.
 4. **Present plan and wait for approval**: After analysis, you MUST present the following to the user and wait for explicit approval BEFORE proceeding to any development:
+   - **A diagram of the proposed changes** — render it with the `show_widget` tool: a small `graph.json`-based view with the modified nodes highlighted, their contracts as labeled edges (mark any contract that changes), and each modified node tagged with its BFS wave. Fall back to a Mermaid flowchart if `show_widget` is unavailable. (See the `/modular-dev:plan` skill for the full spec.)
    - **Which components (nodes) will be modified** — list every node by ID
    - **What changes are expected for each** — a concise description of the planned modifications per node
    - Ask: "Proceed with this plan?"

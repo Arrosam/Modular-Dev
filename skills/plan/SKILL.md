@@ -103,7 +103,19 @@ From all zone managers' analyses, compile the ordered list of work units:
    - Continue until all work is queued
 3. Within each wave, order alphabetically (deterministic)
 
-Present the plan to the user. This is MANDATORY — development cannot begin until the user has seen and approved this:
+### Visualize the proposed changes (show_widget)
+
+Before showing the textual plan, draw a diagram of how the proposed changes fit together with the **`show_widget`** tool (`mcp__visualize__show_widget`). Call `mcp__visualize__read_me` with module `["diagram"]` once first (required before the first `show_widget` call in a session), then emit a single diagram.
+
+Build it ONLY from `graph.json` and the zone managers' specs — never invent nodes, contracts, or edges:
+- One box per node that is modified or directly adjacent to a modified node. Mark the **nodes to modify** distinctly (accent fill + a "MODIFIED" badge); draw immediate neighbors muted, for context.
+- One directed, labeled edge per contract between those nodes (arrow from the dependent node to the implementing node). Mark any **contract being changed** distinctly (e.g. dashed/accent) and label what changes.
+- Annotate each modified node with a one-line summary of its change (key files/methods) and its BFS wave number, so the build order reads straight off the diagram.
+- Add a short legend: modified vs. context node, changed vs. stable contract, and wave order.
+
+If the change spans many nodes, show the affected subgraph plus one ring of neighbors, not the whole project. Author it as an SVG (boxes + arrows) per the `read_me` guidance, using its CSS variables so it themes to the client. If `show_widget` is not available in the session, fall back to an equivalent Mermaid `flowchart` in a fenced code block.
+
+Then present the textual plan below alongside the diagram. This is MANDATORY — development cannot begin until the user has seen and approved this:
 
 ```
 Development plan for: <task summary>
@@ -121,6 +133,12 @@ Nodes to modify (in BFS order):
   ...
 
 Estimated units of work: <N>
+
+How development will run (per the current bus model):
+  - Independent nodes build in parallel waves — each dev agent works in its own isolated git worktree.
+  - Per node: edge tests are written and committed first (one commit, when written), then the node is developed, verified in its worktree, and committed once — implementation plus the graph.json update together.
+  - overviews/ is gitignored: overview files refresh locally after each node but never enter git history.
+  - Commit messages are clean — "<node-id>: <summary>" — with no [modular-dev] prefix.
 
 Proceed with this plan?
 ```
