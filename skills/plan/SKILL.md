@@ -105,15 +105,22 @@ From all zone managers' analyses, compile the ordered list of work units:
 
 ### Visualize the proposed changes (show_widget)
 
-Before showing the textual plan, draw a diagram of how the proposed changes fit together with the **`show_widget`** tool (`mcp__visualize__show_widget`). Call `mcp__visualize__read_me` with module `["diagram"]` once first (required before the first `show_widget` call in a session), then emit a single diagram.
+Before showing the textual plan, draw a diagram of how the proposed changes fit together with the **`show_widget`** tool (`mcp__visualize__show_widget`). Call `mcp__visualize__read_me` with module `["diagram"]` once first (required before the first `show_widget` call in a session), then emit a single SVG diagram.
 
-Build it ONLY from `graph.json` and the zone managers' specs — never invent nodes, contracts, or edges:
-- One box per node that is modified or directly adjacent to a modified node. Mark the **nodes to modify** distinctly (accent fill + a "MODIFIED" badge); draw immediate neighbors muted, for context.
-- One directed, labeled edge per contract between those nodes (arrow from the dependent node to the implementing node). Mark any **contract being changed** distinctly (e.g. dashed/accent) and label what changes.
-- Annotate each modified node with a one-line summary of its change (key files/methods) and its BFS wave number, so the build order reads straight off the diagram.
-- Add a short legend: modified vs. context node, changed vs. stable contract, and wave order.
+Build it ONLY from `graph.json` and the zone managers' specs — never invent nodes, contracts, or edges.
 
-If the change spans many nodes, show the affected subgraph plus one ring of neighbors, not the whole project. Author it as an SVG (boxes + arrows) per the `read_me` guidance, using its CSS variables so it themes to the client. If `show_widget` is not available in the session, fall back to an equivalent Mermaid `flowchart` in a fenced code block.
+**Content:**
+- One card per node that is modified or directly adjacent to a modified node. If the change spans many nodes, show the affected subgraph plus one ring of neighbors, not the whole project. Keep each row to ≤4 cards (wrap into per-wave rows otherwise).
+- Each **modified** card shows: the `node-id` (monospace, accent color), a ≤5-word role, a `→ <change>` line naming the key files/methods, and two badges — `MODIFIED` and `WAVE <n>` (its BFS build order). Draw **context** (unchanged) neighbors with a dim border/fill and no badges.
+- One arrow per contract, drawn from the **implementing** node to the **dependent** node (the direction the capability flows), so wave order reads left-to-right. Label it with the `contract-id` (monospace). Mark a **contract being changed** with an accent, dashed stroke plus a small `changed: <what>` sublabel; draw stable contracts as a thin gray solid line.
+- A compact legend (modified vs. context node, changed vs. stable contract, `WAVE n` = build order) and a one-line footer (e.g. "each node builds in its own worktree, talking only through locked contracts").
+
+**Style — match this house look (flat and editorial, not a raw boxes-and-arrows sketch):**
+- Dark rounded cards (`rx` ≈ 12) on a transparent outer background. Use ONE accent ramp (a blue) plus neutral grays — nothing else.
+- Monospace (`var(--font-mono, …)`) for every identifier (node-ids, contract names, change snippets); sans for prose. Hardcode light text *inside* the dark cards; use the `read_me` CSS variables (`--color-text-secondary`, `--color-border-tertiary`, …) for page-level text (title, legend, footer) so those adapt to the client theme.
+- Give it a title and a one-line subtitle (`<task> · N nodes · M waves`), and add `role="img"` with `<title>`/`<desc>` for accessibility.
+
+If `show_widget` is not available in the session, fall back to an equivalent Mermaid `flowchart` in a fenced code block (same nodes, edges, change markers, and wave labels).
 
 Then present the textual plan below alongside the diagram. This is MANDATORY — development cannot begin until the user has seen and approved this:
 
