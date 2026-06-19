@@ -86,6 +86,7 @@ Each package is developed by an isolated agent that can only see:
 - **Test Writer**: writes comprehensive edge tests from contract definitions *before* any implementation exists. Applies BVA, equivalence partitioning, state transition testing, and error guessing.
 - **Dev Agent**: implements exactly one package. Isolated via hooks. If the contract is insufficient, it stops and escalates rather than working around it.
 - **Test Runner**: executes edge tests. Cannot modify any file.
+- **Smoke Tester**: black-box tests the *assembled* app as a brand-new user — installs, builds, and runs it from a fresh clone, then drives an acceptance loop that finds bugs edge tests can't (integration gaps, first-run friction, missing docs) and feeds them back through plan → develop until the app passes.
 
 **Independent packages run in parallel waves.** Because dev agents code only against locked contract interfaces — never another package's code — packages whose contracts are ready have no development-time coupling and are built concurrently. Each concurrent dev agent runs in its **own sparse git worktree** containing only its package plus read-only `contracts/` and `shared/` — so it physically cannot see sibling packages or test files. **Each package is then tested inside its own worktree before being merged back** — so a failing test pinpoints exactly one package and its broken code never reaches your working tree. Only packages that pass in isolation are harvested into the main tree and committed sequentially, pathspec-scoped (one package = one commit). Parallelism never causes cross-package contamination or merge conflicts.
 
@@ -142,6 +143,7 @@ claude --plugin-dir /path/to/modular-dev
 | `/modular-dev:setup` | Decompose a project into packages, contracts, and zones |
 | `/modular-dev:plan <task>` | Analyze a task and build a BFS work queue |
 | `/modular-dev:develop` | Execute the next unit of work from the queue |
+| `/modular-dev:smoke-test` | Test the assembled app as a fresh new user, then loop fixes until clean |
 | `/modular-dev:status` | Show progress across all packages |
 | `/modular-dev:add-node` | Add a new package |
 | `/modular-dev:add-contract` | Add or modify a contract interface |
@@ -212,13 +214,15 @@ modular-dev/
 │   ├── setup/SKILL.md          # Project initialization
 │   ├── plan/SKILL.md           # BFS task planning
 │   ├── develop/SKILL.md        # Core development loop
+│   ├── smoke-test/SKILL.md     # Fresh-user acceptance loop (find → fix → re-test)
 │   ├── add-node/SKILL.md       # Add new package
 │   ├── add-contract/SKILL.md   # Add/modify contract
 │   └── status/SKILL.md         # Progress display
 ├── agents/
 │   ├── developer.md            # Dev agent (isolated, no Agent tool)
 │   ├── test-writer.md          # Test writer (contract-based, 4 techniques)
-│   └── tester.md               # Test runner (read-only, no write tools)
+│   ├── tester.md               # Edge-test runner (read-only, no write tools)
+│   └── smoke-tester.md         # Black-box app tester (runs the app as a new user)
 ├── hooks/
 │   └── hooks.json              # Hook configuration (auto-loaded)
 ├── scripts/                    # Hook implementation scripts

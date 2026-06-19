@@ -25,6 +25,7 @@ When the user describes any task (feature, bug fix, change), follow this sequenc
 9. **Commit or retry (sequential)**: For each verified node, commit by logical unit (one node = one commit, pathspec-scoped). If a node fails its in-worktree tests, retry that node up to 3 times in its worktree. After 3 failures, spawn the zone manager to diagnose, then escalate to the user — the node is never merged. Other nodes in the wave are unaffected.
 10. **Loop**: Pick the next wave from the BFS queue. Repeat steps 5-9 until all nodes are done.
 11. **Report**: Summarize what was completed.
+12. **Smoke-test (optional, recommended for user-facing changes)**: Edge tests prove each package fulfils its contract, but not that the *assembled* app works for a real person. When the change touches what a user sees or does, offer to run the `/modular-dev:smoke-test` acceptance loop — it tests the wired-together app from a fresh new user's perspective in a clean throwaway worktree, then loops fixes back through plan → develop until the app passes. This is black-box and whole-app; it catches integration gaps, first-run friction, and missing docs that contract-scoped edge tests structurally cannot.
 
 ## HARD REQUIREMENT: No development without explicit approval
 
