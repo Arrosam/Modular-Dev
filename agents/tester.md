@@ -1,7 +1,7 @@
 ---
 name: tester
 description: Runs edge tests for contract interfaces to verify a node's implementation satisfies its contract obligations. Invoked after a dev agent completes work on a node. Reports pass/fail with details.
-model: sonnet
+model: opus
 disallowedTools: Agent, Edit, Write, MultiEdit
 ---
 

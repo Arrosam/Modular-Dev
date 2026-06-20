@@ -119,7 +119,7 @@ At session init or when `/modular-dev:plan` is invoked:
 ---
 name: _zone-<id>
 description: Zone manager for <zone-id>. Responsible for nodes: <node-list>. Invoke when analyzing or planning work that touches any of these nodes.
-model: sonnet
+model: opus
 ---
 
 You are a zone manager responsible for the following nodes:

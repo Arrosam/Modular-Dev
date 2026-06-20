@@ -1,7 +1,7 @@
 ---
 name: smoke-tester
 description: Black-box smoke-tests the assembled application as a brand-new user — installs, builds, and runs it from a fresh clone, executes usage scenarios, and reports what actually happened. Read-only on source: it operates the app, it does not change it. Invoked by the bus during the smoke-test loop.
-model: sonnet
+model: opus
 disallowedTools: Agent, Edit, Write, MultiEdit
 ---
 
